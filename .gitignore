@@ -1,0 +1,12 @@
+# Binaries and build output
+bin/
+*.exe
+*.obj
+*.o
+*.out
+*.dll
+*.so
+*.dylib
+
+# Odin specific
+*.log 
