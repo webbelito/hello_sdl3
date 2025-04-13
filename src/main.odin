@@ -1,11 +1,17 @@
 package main
 
 import "base:runtime"
+
 import "core:log"
+import "core:math/linalg"
 
 import sdl "vendor:sdl3"
 
 default_context : runtime.Context
+
+UBO :: struct {
+    material_view_projection: matrix[4, 4]f32,
+}
 
 WINDOW_WIDTH :: 1920
 WINDOW_HEIGHT :: 1080
@@ -44,8 +50,8 @@ main :: proc() {
     ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
 
     // Load Shaders
-    vertex_shader := load_shader(gpu, vertex_shader_code, .VERTEX)
-    fragment_shader := load_shader(gpu, fragment_shader_code, .FRAGMENT)
+    vertex_shader := load_shader(gpu, vertex_shader_code, .VERTEX, 1)
+    fragment_shader := load_shader(gpu, fragment_shader_code, .FRAGMENT, 0)
 
     // Create a Graphics Pipeline
     pipeline := sdl.CreateGPUGraphicsPipeline(gpu, {
@@ -64,11 +70,32 @@ main :: proc() {
     sdl.ReleaseGPUShader(gpu, vertex_shader)
     sdl.ReleaseGPUShader(gpu, fragment_shader)
 
+    // Get the Window Size
+    window_size: [2]i32
+    ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
+
+    // Rotation
+    ROTATION_SPEED := linalg.to_radians(f32(90))
+    rotation: f32
+
+    // Create a Projection Matrix (Camera)
+    projection_matrix := linalg.matrix4_perspective_f32(linalg.to_radians(f32(90)), f32(window_size.x) / f32(window_size.y), 0.0001, 1000)
+
+    // Delta Time
+    last_tick := sdl.GetTicks()
+
     // *
     // * Main Loop
     // *
 
     main_loop: for {
+
+        // Calculate Delta Time
+        new_tick := sdl.GetTicks()
+        delta_time := f32(new_tick - last_tick) / 1000
+        
+        // Set the last tick
+        last_tick = new_tick
 
         // Process SDL events
         event: sdl.Event
@@ -96,6 +123,17 @@ main :: proc() {
         // Wait for the swapchain texture and acquire it
         ok := sdl.WaitAndAcquireGPUSwapchainTexture(command_buf, window, &swapchain_texture, nil, nil); assert(ok)
 
+        // Update the Rotation
+        rotation += ROTATION_SPEED * delta_time
+
+        // Create a Model Matrix
+        model_matrix := linalg.matrix4_translate_f32({0, 0, -5}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+
+        // Create a UBO
+        ubo := UBO {
+            material_view_projection = projection_matrix * model_matrix,
+        }
+
         // Draw if we have a swapchain texture
         if swapchain_texture != nil {
         
@@ -113,6 +151,9 @@ main :: proc() {
             // Bind the Graphics Pipeline
             sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
 
+            // Push the Vertex Uniform Data
+            sdl.PushGPUVertexUniformData(command_buf, 0, &ubo, size_of(UBO))
+
             // Draw a triangle
             sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 
@@ -128,7 +169,7 @@ main :: proc() {
 }
 
 
-load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage) -> ^sdl.GPUShader {
+load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, num_uniform_buffers: u32) -> ^sdl.GPUShader {
 
     // Create a shader
     shader := sdl.CreateGPUShader(device, {
@@ -137,6 +178,7 @@ load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStag
         entrypoint = "main",
         format = {.SPIRV},
         stage = stage,
+        num_uniform_buffers = num_uniform_buffers,
     }); assert(shader != nil)
 
     return shader
