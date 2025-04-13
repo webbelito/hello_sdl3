@@ -67,13 +67,23 @@ main :: proc() {
 
     // Create Vertex Data
     verticies := []Vertex_Data {
-        { position = {-0.5, -0.5, 0}, color = {1, 0, 0, 1} },
-        { position = {   0,  0.5, 0}, color = {0, 1, 0, 1} },
-        { position = { 0.5, -0.5, 0}, color = {0, 0, 1, 1} },
+        { position = { 0.5,  0.5, 0}, color = {0, 1, 1, 1} }, // Top Right
+        { position = { 0.5, -0.5, 0}, color = {1, 0, 1, 1} }, // Bottom Right
+        { position = {-0.5, -0.5, 0}, color = {1, 0, 1, 1} }, // Bottom Left
+        { position = {-0.5,  0.5, 0}, color = {1, 0, 0, 1} }, // Top Left
     }
 
     // Calculate the size of the vertex data
-    verticies_byte_size := len(verticies) * size_of(Vertex_Data)
+    verticies_byte_size := len(verticies) * size_of(verticies[0])
+
+    // Create Index Data
+    indices := []u16 {
+        0, 1, 3, // First Triangle
+        1, 2, 3, // Second Triangle
+    }
+
+    // Calculate the size of the index data
+    indices_byte_size := len(indices) * size_of(indices[0])
 
     // Create a Vertex Buffer
     vertex_buf := sdl.CreateGPUBuffer(gpu, {
@@ -81,17 +91,26 @@ main :: proc() {
         size = u32(verticies_byte_size),
     }); assert(vertex_buf != nil)
 
+    // Create an Index Buffer
+    index_buf := sdl.CreateGPUBuffer(gpu, {
+        usage = {.INDEX},
+        size = u32(indices_byte_size),
+    }); assert(index_buf != nil)
+
     // Create a Transfer Buffer
     transfer_buf := sdl.CreateGPUTransferBuffer(gpu, {
         usage = .UPLOAD,
-        size = u32(verticies_byte_size),
+        size = u32(verticies_byte_size + indices_byte_size),
     }); assert(transfer_buf != nil)
 
     // Map the Transfer Buffer
-    transfer_mem := sdl.MapGPUTransferBuffer(gpu, transfer_buf, false); assert(transfer_mem != nil)
+    transfer_mem := transmute([^]byte)sdl.MapGPUTransferBuffer(gpu, transfer_buf, false); assert(transfer_mem != nil)
 
     // Copy the Vertex Data to the Transfer Buffer
     mem.copy(transfer_mem, raw_data(verticies), verticies_byte_size)
+
+    // Copy the Index Data to the Transfer Buffer
+    mem.copy(transfer_mem[verticies_byte_size:], raw_data(indices), indices_byte_size)
 
     // Unmap the Transfer Buffer
     sdl.UnmapGPUTransferBuffer(gpu, transfer_buf)
@@ -106,6 +125,13 @@ main :: proc() {
     sdl.UploadToGPUBuffer(copy_pass, 
         { transfer_buffer = transfer_buf },
         { buffer = vertex_buf, size = u32(verticies_byte_size)},
+        false,
+    )
+
+    // Upload the Index Data to the Index Buffer
+    sdl.UploadToGPUBuffer(copy_pass, 
+        { transfer_buffer = transfer_buf, offset = u32(verticies_byte_size) },
+        { buffer = index_buf, size = u32(indices_byte_size) },
         false,
     )
 
@@ -242,11 +268,14 @@ main :: proc() {
             // Bind the Vertex Buffer
             sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = vertex_buf }), 1)
 
-            // Push the Vertex Uniform Data
-            sdl.PushGPUVertexUniformData(command_buf, 0, &ubo, size_of(UBO))
+            // Bind the Index Buffer
+            sdl.BindGPUIndexBuffer(render_pass, { buffer = index_buf }, ._16BIT)
 
-            // Draw a triangle
-            sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
+            // Push the Vertex Uniform Data
+            sdl.PushGPUVertexUniformData(command_buf, 0, &ubo, size_of(ubo))
+
+            // Draw the Indexed Primitives
+            sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0, 0)
 
             // End the render pass
             sdl.EndGPURenderPass(render_pass)
