@@ -92,21 +92,27 @@ main :: proc() {
     // *
 
     // Create Vertex Data
-    verticies := []Vertex_Data {
-        { position = { 0.5,  0.5, 0}, color = WHITE, uv = {1, 0} }, // Top Right
-        { position = { 0.5, -0.5, 0}, color = WHITE, uv = {1, 1} }, // Bottom Right
-        { position = {-0.5, -0.5, 0}, color = WHITE, uv = {0, 1} }, // Bottom Left
-        { position = {-0.5,  0.5, 0}, color = WHITE, uv = {0, 0} }, // Top Left
+    obj_data := obj_load("assets/meshes/sedan-sports.obj")
+
+    verticies := make([]Vertex_Data, len(obj_data.faces))
+    indices := make([]u16, len(obj_data.faces))
+
+    for face, i in obj_data.faces {
+        verticies[i] = Vertex_Data {
+            position = obj_data.positions[face.position],
+            color = WHITE,
+            uv = obj_data.uvs[face.uv],
+        }
+        indices[i] = u16(i)
     }
 
-    // Calculate the size of the vertex data
+    obj_destroy(obj_data)
+
+    // Calculate the number of indicies
+    num_indicies := len(indices)
+
+    // Calculate the size of the verticies
     verticies_byte_size := len(verticies) * size_of(verticies[0])
-
-    // Create Index Data
-    indices := []u16 {
-        0, 1, 3, // First Triangle
-        1, 2, 3, // Second Triangle
-    }
 
     // Calculate the size of the index data
     indices_byte_size := len(indices) * size_of(indices[0])
@@ -140,6 +146,12 @@ main :: proc() {
 
     // Unmap the Transfer Buffer
     sdl.UnmapGPUTransferBuffer(gpu, transfer_buf)
+
+    // Delete the Indices
+    delete(indices)
+
+    // Delete the Verticies
+    delete(verticies)
 
     // Create a Texture Transfer Buffer
     texture_transfer_buf := sdl.CreateGPUTransferBuffer(gpu, {
@@ -335,7 +347,7 @@ main :: proc() {
             sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = texture, sampler = sampler }), 1)
 
             // Draw the Indexed Primitives
-            sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0, 0)
+            sdl.DrawGPUIndexedPrimitives(render_pass, u32(num_indicies), 1, 0, 0, 0)
 
             // End the render pass
             sdl.EndGPURenderPass(render_pass)
