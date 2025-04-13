@@ -14,15 +14,38 @@
 # Dependencies:
 # - glslc:  Required for shader compilation
 # - SDL3.dll: Expected at C:\Users\anton\odin\vendor\sdl3\SDL3.dll
+# - Odin:   Required for building the project
+#
+# Usage:
+#   .\build.ps1 [options]
+#
+# Options:
+#   -clean     Clean build artifacts before building
+#   -help      Show this help message
+#   -version   Show version information
 #
 $ErrorActionPreference = "Stop"
+$script:Version = "1.0.0"
 
 # ASCII Art Header
 $header = @"
- Odin Builder
-"@
+............................................................
+......%%%%...%%%%%...%%%%%%..%%..%%.........................                        
+.....%%..%%..%%..%%....%%....%%%.%%.........................                        
+.....%%..%%..%%..%%....%%....%%.%%%.........................                       
+.....%%..%%..%%..%%....%%....%%..%%.........................                        
+......%%%%...%%%%%...%%%%%%..%%..%%.........................                        
+....................................                        
+.....%%%%%...%%..%%..%%%%%%..%%......%%%%%...%%%%%%..%%%%%..
+.....%%..%%..%%..%%....%%....%%......%%..%%..%%......%%..%%.
+.....%%%%%...%%..%%....%%....%%......%%..%%..%%%%....%%%%%..
+.....%%..%%..%%..%%....%%....%%......%%..%%..%%......%%..%%.
+.....%%%%%....%%%%...%%%%%%..%%%%%%..%%%%%...%%%%%%..%%..%%.
+............................................................
 
-Write-Host $header -ForegroundColor Cyan
+Odin Builder $Version
+
+"@
 
 # Function to format log messages with timestamp and level
 function Write-Log {
@@ -33,6 +56,108 @@ function Write-Log {
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Host "$timestamp [$Level] $Message" -ForegroundColor $Color
+}
+
+# Function to show help message
+function Show-Help {
+    Write-Host "Odin SDL3 Build Script v$Version" -ForegroundColor Cyan
+    Write-Host "Usage: .\build.ps1 [options]" -ForegroundColor White
+    Write-Host "Options:" -ForegroundColor White
+    Write-Host "  -clean     Clean build artifacts before building" -ForegroundColor White
+    Write-Host "  -help      Show this help message" -ForegroundColor White
+    Write-Host "  -version   Show version information" -ForegroundColor White
+    exit 0
+}
+
+# Function to show version
+function Show-Version {
+    Write-Host "Odin SDL3 Build Script v$Version" -ForegroundColor Cyan
+    exit 0
+}
+
+# Function to clean build artifacts
+function Clean-BuildArtifacts {
+    Write-Log "Cleaning build artifacts..." "INFO" "White"
+    
+    # Remove bin directory
+    if (Test-Path "bin") {
+        Remove-Item -Path "bin" -Recurse -Force
+        Write-Log "Removed bin directory" "SUCCESS" "Green"
+    }
+    
+    # Remove compiled shaders
+    if (Test-Path "assets/shaders/bin") {
+        Remove-Item -Path "assets/shaders/bin" -Recurse -Force
+        Write-Log "Removed compiled shaders" "SUCCESS" "Green"
+    }
+    
+    Write-Log "Clean completed" "SUCCESS" "Green"
+}
+
+# Function to check dependencies
+function Check-Dependencies {
+    Write-Log "Checking dependencies..." "INFO" "White"
+    $missingDeps = @()
+    
+    # Check for glslc
+    try {
+        $null = Get-Command glslc -ErrorAction Stop
+        Write-Log "Found glslc" "SUCCESS" "Green"
+    } catch {
+        $missingDeps += "glslc (shader compiler)"
+    }
+    
+    # Check for Odin
+    try {
+        $null = Get-Command odin -ErrorAction Stop
+        Write-Log "Found Odin compiler" "SUCCESS" "Green"
+    } catch {
+        $missingDeps += "Odin compiler"
+    }
+    
+    # Check for SDL3.dll
+    $sdl3_dll_path = "C:\Users\anton\odin\vendor\sdl3\SDL3.dll"
+    if (Test-Path $sdl3_dll_path) {
+        Write-Log "Found SDL3.dll" "SUCCESS" "Green"
+    } else {
+        $missingDeps += "SDL3.dll at $sdl3_dll_path"
+    }
+    
+    if ($missingDeps.Count -gt 0) {
+        Write-Log "Missing dependencies:" "ERROR" "Red"
+        foreach ($dep in $missingDeps) {
+            Write-Log "  - $dep" "ERROR" "Red"
+        }
+        Write-Log "Please install the missing dependencies and try again" "ERROR" "Red"
+        exit 1
+    }
+    
+    Write-Log "All dependencies found" "SUCCESS" "Green"
+}
+
+# Parse command line arguments
+$clean = $false
+foreach ($arg in $args) {
+    switch ($arg) {
+        "-clean" { $clean = $true }
+        "-help" { Show-Help }
+        "-version" { Show-Version }
+        default {
+            Write-Log "Unknown option: $arg" "ERROR" "Red"
+            Show-Help
+        }
+    }
+}
+
+# Show header
+Write-Host $header -ForegroundColor Cyan
+
+# Check dependencies
+Check-Dependencies
+
+# Clean if requested
+if ($clean) {
+    Clean-BuildArtifacts
 }
 
 # Create bin directory if it doesn't exist
