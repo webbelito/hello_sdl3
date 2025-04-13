@@ -7,6 +7,8 @@ import "core:math"
 import "core:math/linalg"
 import "core:mem"
 import "core:strings"
+import "core:path/filepath"
+import "core:os"
 
 import sdl "vendor:sdl3"
 import stbi "vendor:stb/image"
@@ -61,6 +63,8 @@ WINDOW_WIDTH :: 1920
 WINDOW_HEIGHT :: 1080
 WINDOW_TITLE :: "Hello SDL"
 
+ASSETS_DIR :: "assets"
+
 PLAYER_HEIGHT :: 1
 PLAYER_MOVEMENT_SPEED :: 5
 
@@ -71,12 +75,7 @@ WHITE :: sdl.FColor { 1, 1, 1, 1 }
 
 DEPTH_TEXTURE_FORMAT :: sdl.GPUTextureFormat.D24_UNORM
 
-// Load Shader file as binary
-vertex_shader_code := #load("../assets/shaders/bin/shader.spv.vert")
-fragment_shader_code := #load("../assets/shaders/bin/shader.spv.frag")
-
 init :: proc() {
-
 
     sdl.SetLogPriorities(.VERBOSE)
     sdl.SetLogOutputFunction(proc "c" (userdata: rawptr, category: sdl.LogCategory, priority: sdl.LogPriority, message: cstring) {
@@ -122,8 +121,8 @@ init :: proc() {
 setup_pipeline :: proc() {
 
     // Load Shaders
-    vertex_shader := load_shader(gpu, vertex_shader_code, .VERTEX, num_uniform_buffers = 1, num_samplers = 0)
-    fragment_shader := load_shader(gpu, fragment_shader_code, .FRAGMENT, num_uniform_buffers = 0, num_samplers = 1)
+    vertex_shader := load_shader(gpu, "shader.vert", num_uniform_buffers = 1, num_samplers = 0)
+    fragment_shader := load_shader(gpu, "shader.frag", num_uniform_buffers = 0, num_samplers = 1)
 
     // Create Vertex Attributes
     vertex_attributes := []sdl.GPUVertexAttribute {
@@ -198,7 +197,7 @@ main :: proc() {
     init()
     setup_pipeline()
 
-    model := load_model("assets/meshes/ambulance.obj", "assets/textures/colormap.png")
+    model := load_model("tractor-police.obj", "colormap.png")
 
     // Rotation
     ROTATION_SPEED := linalg.to_radians(f32(90))
@@ -368,26 +367,43 @@ update_camera :: proc(dt: f32) {
 }
 
 
-load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, num_uniform_buffers: u32, num_samplers: u32) -> ^sdl.GPUShader {
+load_shader :: proc(device: ^sdl.GPUDevice, shader_file: string, num_uniform_buffers: u32, num_samplers: u32) -> ^sdl.GPUShader {
+
+
+    // Determine shader stage
+    stage: sdl.GPUShaderStage
+    
+    switch filepath.ext(shader_file) {
+    case ".vert":
+        stage = .VERTEX
+    case ".frag":
+        stage = .FRAGMENT
+    }
+
+    // Load the shader code
+    shaderfile := filepath.join({ASSETS_DIR, "shaders", "bin", shader_file}, context.temp_allocator)
+    filename := strings.concatenate({shaderfile, ".spv"})
+    code, ok := os.read_entire_file_from_filename(filename, context.temp_allocator); assert(ok)
 
     // Create a shader
-    shader := sdl.CreateGPUShader(device, {
+    return sdl.CreateGPUShader(device, {
         code_size = len(code),
         code = raw_data(code),
         entrypoint = "main",
         format = {.SPIRV},
-        stage = stage,
         num_uniform_buffers = num_uniform_buffers,
         num_samplers = num_samplers,
-    }); assert(shader != nil)
-
-    return shader
+        stage = stage, 
+    })
 
 }
 
 load_model :: proc(mesh_file: string, texture_file: string) -> Model {
 
-    texture_file := strings.clone_to_cstring(texture_file, context.temp_allocator)
+    mesh_path := filepath.join({ASSETS_DIR, "meshes", mesh_file}, context.temp_allocator)
+    texture_path := filepath.join({ASSETS_DIR, "textures", texture_file}, context.temp_allocator)
+
+    texture_file := strings.clone_to_cstring(texture_path, context.temp_allocator)
 
     // Load the image
     image_size: Vec2i
@@ -411,7 +427,7 @@ load_model :: proc(mesh_file: string, texture_file: string) -> Model {
     // *
 
     // Create Vertex Data
-    obj_data := obj_load(mesh_file)
+    obj_data := obj_load(mesh_path)
 
     verticies := make([]Vertex_Data, len(obj_data.faces))
     indices := make([]u16, len(obj_data.faces))

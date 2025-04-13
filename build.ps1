@@ -8,11 +8,11 @@
 #
 # Directory Structure:
 # - bin/:              Contains the compiled executable and SDL3.dll
-# - assets/shaders/:   Contains GLSL shader source files
+# - assets/shaders/:   Contains HLSL shader source files
 # - assets/shaders/bin/: Contains compiled SPIR-V shader files
 #
 # Dependencies:
-# - glslc:  Required for shader compilation
+# - shadercross: Required for shader compilation
 # - SDL3.dll: Expected at C:\Users\anton\odin\vendor\sdl3\SDL3.dll
 # - Odin:   Required for building the project
 #
@@ -99,36 +99,26 @@ function Check-Dependencies {
     Write-Log "Checking dependencies..." "INFO" "White"
     $missingDeps = @()
     
-    # Check for glslc
+    # Check for shadercross
     try {
-        $null = Get-Command glslc -ErrorAction Stop
-        Write-Log "Found glslc" "SUCCESS" "Green"
+        $null = Get-Command shadercross -ErrorAction Stop
     } catch {
-        $missingDeps += "glslc (shader compiler)"
+        Write-Log "shadercross not found. Please install it and try again." "ERROR" "Red"
+        exit 1
     }
     
     # Check for Odin
     try {
         $null = Get-Command odin -ErrorAction Stop
-        Write-Log "Found Odin compiler" "SUCCESS" "Green"
     } catch {
-        $missingDeps += "Odin compiler"
+        Write-Log "Odin compiler not found. Please install it and try again." "ERROR" "Red"
+        exit 1
     }
     
     # Check for SDL3.dll
     $sdl3_dll_path = "C:\Users\anton\odin\vendor\sdl3\SDL3.dll"
-    if (Test-Path $sdl3_dll_path) {
-        Write-Log "Found SDL3.dll" "SUCCESS" "Green"
-    } else {
-        $missingDeps += "SDL3.dll at $sdl3_dll_path"
-    }
-    
-    if ($missingDeps.Count -gt 0) {
-        Write-Log "Missing dependencies:" "ERROR" "Red"
-        foreach ($dep in $missingDeps) {
-            Write-Log "  - $dep" "ERROR" "Red"
-        }
-        Write-Log "Please install the missing dependencies and try again" "ERROR" "Red"
+    if (-not (Test-Path $sdl3_dll_path)) {
+        Write-Log "SDL3.dll not found at $sdl3_dll_path" "ERROR" "Red"
         exit 1
     }
     
@@ -172,7 +162,7 @@ if (-not (Test-Path "assets/shaders/bin")) {
 
 # Compile shaders
 Write-Log "Compiling shaders..." "INFO" "White"
-$shaderFiles = Get-ChildItem -Path "assets/shaders" -Include "*.glsl.vert","*.glsl.frag" -Recurse
+$shaderFiles = Get-ChildItem -Path "assets/shaders" -Include "*.vert.hlsl","*.frag.hlsl" -Recurse
 $shaderCount = 0
 
 foreach ($shader in $shaderFiles) {
@@ -181,13 +171,29 @@ foreach ($shader in $shaderFiles) {
         continue
     }
     $shaderCount++
-    # Extract the shader type (vert or frag) from the filename
-    $shaderType = if ($shader.Name -like "*.vert") { "vert" } else { "frag" }
-    # Replace .glsl with .spv in the filename
-    $outputName = $shader.BaseName -replace "\.glsl$", ".spv"
-    $outputPath = "assets/shaders/bin/$outputName.$shaderType"
-    Write-Log "Compiling $($shader.Name)..." "INFO" "White"
-    glslc $shader.FullName -o $outputPath
+    
+    # Determine shader type based on filename
+    $isVertexShader = $shader.Name -like "*.vert.hlsl"
+    $shaderType = if ($isVertexShader) { "vertex" } else { "fragment" }
+    
+    # Create output filename with .spv extension
+    $baseName = $shader.BaseName
+    if ($isVertexShader) {
+        $baseName = $baseName -replace "\.vert$", ""
+        $outputName = "$baseName.vert.spv"
+    } else {
+        $baseName = $baseName -replace "\.frag$", ""
+        $outputName = "$baseName.frag.spv"
+    }
+    
+    $outputPath = "assets/shaders/bin/$outputName"
+    
+    # Add debug output to verify the command
+    $command = "shadercross $($shader.FullName) -s HLSL -d SPIRV -t $shaderType -o $outputPath"
+    
+    # Execute the command
+    Invoke-Expression $command
+    
     if ($LASTEXITCODE -eq 0) {
         Write-Log "Successfully compiled $($shader.Name)" "SUCCESS" "Green"
     } else {
@@ -209,14 +215,13 @@ odin build src -out:bin/hello_sdl3.exe -strict-style -debug
 if ($LASTEXITCODE -eq 0) {
     Write-Log "Build successful! Output is in bin/hello_sdl3.exe" "SUCCESS" "Green"
     
-    # Copy SDL3.dll to bin directory
+    # Copy SDL3.dll to bin directory if it doesn't exist
     $sdl3_dll_path = "C:\Users\anton\odin\vendor\sdl3\SDL3.dll"
-    if (Test-Path $sdl3_dll_path) {
+    $sdl3_dll_dest = ".\bin\SDL3.dll"
+    if (-not (Test-Path $sdl3_dll_dest)) {
         Write-Log "Copying SDL3.dll to bin directory..." "INFO" "White"
-        Copy-Item $sdl3_dll_path -Destination ".\bin\" -Force
+        Copy-Item $sdl3_dll_path -Destination $sdl3_dll_dest -Force
         Write-Log "SDL3.dll copied successfully!" "SUCCESS" "Green"
-    } else {
-        Write-Log "SDL3.dll not found at $sdl3_dll_path" "ERROR" "Red"
     }
     
     Write-Log "Running the program..." "INFO" "White"
