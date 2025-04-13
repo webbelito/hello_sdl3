@@ -204,10 +204,10 @@ if ($shaderCount -eq 0) {
 
 # Build the project
 Write-Log "Building Odin project..." "INFO" "White"
-odin build src -out:bin/main.exe -strict-style -debug
+odin build src -out:bin/hello_sdl3.exe -strict-style -debug
 
 if ($LASTEXITCODE -eq 0) {
-    Write-Log "Build successful! Output is in bin/main.exe" "SUCCESS" "Green"
+    Write-Log "Build successful! Output is in bin/hello_sdl3.exe" "SUCCESS" "Green"
     
     # Copy SDL3.dll to bin directory
     $sdl3_dll_path = "C:\Users\anton\odin\vendor\sdl3\SDL3.dll"
@@ -220,7 +220,7 @@ if ($LASTEXITCODE -eq 0) {
     }
     
     Write-Log "Running the program..." "INFO" "White"
-    & "./bin/main.exe"
+    & "./bin/hello_sdl3.exe"
 } else {
     Write-Log "Build failed!" "ERROR" "Red"
     exit 1
