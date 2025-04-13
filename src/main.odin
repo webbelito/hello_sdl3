@@ -3,6 +3,7 @@ package main
 import "base:runtime"
 
 import "core:log"
+import "core:math"
 import "core:math/linalg"
 import "core:mem"
 import "core:strings"
@@ -18,12 +19,16 @@ window_size: Vec2i
 depth_texture: ^sdl.GPUTexture
 pipeline: ^sdl.GPUGraphicsPipeline
 sampler: ^sdl.GPUSampler
+camera: Camera
+look: Look
+key_down: #sparse[sdl.Scancode]bool
+mouse_movement: Vec2
 
-Vec2 :: distinct [2]f32
-Vec3 :: distinct [3]f32
+Vec2 :: [2]f32
+Vec3 :: [3]f32
 
-Vec2i :: distinct [2]i32
-Vec3i :: distinct [3]i32
+Vec2i :: [2]i32
+Vec3i :: [3]i32
 
 Vertex_Data :: struct {
     position: Vec3,
@@ -38,6 +43,16 @@ Model :: struct {
     texture: ^sdl.GPUTexture,
 }
 
+Camera :: struct {
+    position: Vec3,
+    target: Vec3,
+}
+
+Look :: struct {
+    yaw: f32,
+    pitch: f32,
+}
+
 UBO :: struct {
     material_view_projection: matrix[4, 4]f32,
 }
@@ -45,6 +60,12 @@ UBO :: struct {
 WINDOW_WIDTH :: 1920
 WINDOW_HEIGHT :: 1080
 WINDOW_TITLE :: "Hello SDL"
+
+PLAYER_HEIGHT :: 1
+PLAYER_MOVEMENT_SPEED :: 5
+
+MOUSE_SENSITIVITY :: 3
+MOUSE_SENSITIVITY_FACTOR :: 100
 
 WHITE :: sdl.FColor { 1, 1, 1, 1 }
 
@@ -87,6 +108,15 @@ init :: proc() {
         layer_count_or_depth = 1,
         num_levels = 1,
     }); assert(depth_texture != nil)
+
+    // Create a Camera
+    camera = {
+        position = {0, PLAYER_HEIGHT, 3},
+        target = {0, PLAYER_HEIGHT, 0},
+    }
+
+    // Set Window Relative Mouse Mode 
+    ok = sdl.SetWindowRelativeMouseMode(window, true); assert(ok)
 }
 
 setup_pipeline :: proc() {
@@ -132,6 +162,9 @@ setup_pipeline :: proc() {
             enable_depth_test = true,
             enable_depth_write = true,
             compare_op = .LESS,
+        },
+        rasterizer_state = {
+            cull_mode = .BACK,
         },
         target_info = {
             num_color_targets = 1,
@@ -185,6 +218,8 @@ main :: proc() {
 
         free_all(context.temp_allocator)
 
+        mouse_movement = {}
+
         // Calculate Delta Time
         new_tick := sdl.GetTicks()
         delta_time := f32(new_tick - last_tick) / 1000
@@ -200,6 +235,11 @@ main :: proc() {
                     break main_loop
                 case .KEY_DOWN: 
                     if event.key.scancode == .ESCAPE do break main_loop
+                    key_down[event.key.scancode] = true
+                case .KEY_UP:
+                    key_down[event.key.scancode] = false
+                case .MOUSE_MOTION:
+                    mouse_movement = {f32(event.motion.xrel), f32(event.motion.yrel)}
             }
         }
 
@@ -208,6 +248,7 @@ main :: proc() {
         // *
 
         rotation += ROTATION_SPEED * delta_time
+        update_camera(delta_time)
         
         // *
         // * Render
@@ -222,12 +263,15 @@ main :: proc() {
         // Wait for the swapchain texture and acquire it
         ok := sdl.WaitAndAcquireGPUSwapchainTexture(command_buf, window, &swapchain_texture, nil, nil); assert(ok)
 
+        // Create a View Matrix
+        view_matrix := linalg.matrix4_look_at_f32(camera.position, camera.target, {0, 1, 0})
+
         // Create a Model Matrix
-        model_matrix := linalg.matrix4_translate_f32({0, -1, -3}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+        model_matrix := linalg.matrix4_translate_f32({0, 0, 0}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
 
         // Create a UBO
         ubo := UBO {
-            material_view_projection = projection_matrix * model_matrix,
+            material_view_projection = projection_matrix * view_matrix * model_matrix,
         }
 
         // Draw if we have a swapchain texture
@@ -278,6 +322,48 @@ main :: proc() {
         // Submit the command buffer
         ok = sdl.SubmitGPUCommandBuffer(command_buf); assert(ok)
     }
+
+}
+
+update_camera :: proc(dt: f32) {
+
+    // Create Move Input
+    move_input: Vec2
+
+    // Check for Move Input
+    if key_down[.W] do move_input.y += 1
+    if key_down[.S] do move_input.y -= 1
+    if key_down[.A] do move_input.x -= 1
+    if key_down[.D] do move_input.x += 1
+    
+    // Create Look Input
+    look_input := mouse_movement * (MOUSE_SENSITIVITY * MOUSE_SENSITIVITY_FACTOR) * dt
+
+    // Update Look
+    look.yaw = math.wrap(look.yaw - look_input.x, 360)
+    look.pitch = math.clamp(look.pitch - look_input.y, -89, 89)
+
+    // Create Look Matrix
+    look_matrix := linalg.matrix3_from_yaw_pitch_roll_f32(linalg.to_radians(look.yaw), linalg.to_radians(look.pitch), 0)
+
+    // Create Forward and Right Vectors
+    forward := look_matrix * Vec3 {0, 0, -1}
+    right := look_matrix * Vec3 {1, 0, 0}
+
+    // Create Movement Direction
+    movement_direction := forward * move_input.y + right * move_input.x
+    
+    // Set the Y to 0
+    movement_direction.y = 0
+
+    // Create Movement Motion and Normalize
+    movement_motion := linalg.normalize0(movement_direction) * PLAYER_MOVEMENT_SPEED * dt
+
+    // Update Position
+    camera.position += movement_motion
+
+    // Update Target
+    camera.target = camera.position + forward
 
 }
 
