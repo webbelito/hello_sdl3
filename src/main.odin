@@ -33,6 +33,8 @@ WINDOW_TITLE :: "Hello SDL"
 
 WHITE :: sdl.FColor { 1, 1, 1, 1 }
 
+DEPTH_TEXTURE_FORMAT :: sdl.GPUTextureFormat.D24_UNORM
+
 // Load Shader file as binary
 vertex_shader_code := #load("../assets/shaders/bin/shader.spv.vert")
 fragment_shader_code := #load("../assets/shaders/bin/shader.spv.frag")
@@ -73,7 +75,7 @@ main :: proc() {
     // Load the image
     image_size: Vec2i
     
-    image_pixels := stbi.load("assets/textures/cobblestone_1.png", &image_size.x, &image_size.y, nil, 4); assert(image_pixels != nil)
+    image_pixels := stbi.load("assets/textures/colormap.png", &image_size.x, &image_size.y, nil, 4); assert(image_pixels != nil)
     image_pixles_byte_size := image_size.x * image_size.y * 4
     
     // Create a Texture
@@ -86,22 +88,34 @@ main :: proc() {
         num_levels = 1,
     }); assert(texture != nil)
 
+    window_size: Vec2i
+    ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
+
+    depth_texture := sdl.CreateGPUTexture(gpu, {
+        format = DEPTH_TEXTURE_FORMAT,
+        usage = {.DEPTH_STENCIL_TARGET},
+        width = u32(window_size.x),
+        height = u32(window_size.y),
+        layer_count_or_depth = 1,
+        num_levels = 1,
+    }); assert(depth_texture != nil)
 
     // *
     // * Vertex Data
     // *
 
     // Create Vertex Data
-    obj_data := obj_load("assets/meshes/sedan-sports.obj")
+    obj_data := obj_load("assets/meshes/ambulance.obj")
 
     verticies := make([]Vertex_Data, len(obj_data.faces))
     indices := make([]u16, len(obj_data.faces))
 
     for face, i in obj_data.faces {
+        uv := obj_data.uvs[face.uv]
         verticies[i] = Vertex_Data {
             position = obj_data.positions[face.position],
             color = WHITE,
-            uv = obj_data.uvs[face.uv],
+            uv = {uv.x, 1 - uv.y},
         }
         indices[i] = u16(i)
     }
@@ -241,21 +255,24 @@ main :: proc() {
             vertex_attributes = raw_data(vertex_attributes),
             num_vertex_attributes = u32(len(vertex_attributes)),
         },
+        depth_stencil_state = {
+            enable_depth_test = true,
+            enable_depth_write = true,
+            compare_op = .LESS,
+        },
         target_info = {
             num_color_targets = 1,
             color_target_descriptions = &(sdl.GPUColorTargetDescription {
                 format = sdl.GetGPUSwapchainTextureFormat(gpu ,window),
             }),
+            has_depth_stencil_target = true,
+            depth_stencil_format = DEPTH_TEXTURE_FORMAT,
         },
     }); assert(pipeline != nil)
 
     // Release the shaders
     sdl.ReleaseGPUShader(gpu, vertex_shader)
     sdl.ReleaseGPUShader(gpu, fragment_shader)
-
-    // Get the Window Size
-    window_size: [2]i32
-    ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
 
     // Rotation
     ROTATION_SPEED := linalg.to_radians(f32(90))
@@ -310,7 +327,7 @@ main :: proc() {
         rotation += ROTATION_SPEED * delta_time
 
         // Create a Model Matrix
-        model_matrix := linalg.matrix4_translate_f32({0, 0, -2}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+        model_matrix := linalg.matrix4_translate_f32({0, -1, -3}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
 
         // Create a UBO
         ubo := UBO {
@@ -328,8 +345,16 @@ main :: proc() {
                 store_op = .STORE,
             }
 
+            // Create a depth target info
+            depth_target_info := sdl.GPUDepthStencilTargetInfo {
+                texture = depth_texture,
+                load_op = .CLEAR,
+                clear_depth = 1,
+                store_op = .DONT_CARE,
+            }
+
             // Begin a render pass
-            render_pass := sdl.BeginGPURenderPass(command_buf, &color_target, 1, nil); assert(render_pass != nil)
+            render_pass := sdl.BeginGPURenderPass(command_buf, &color_target, 1, &depth_target_info); assert(render_pass != nil)
 
             // Bind the Graphics Pipeline
             sdl.BindGPUGraphicsPipeline(render_pass, pipeline)
