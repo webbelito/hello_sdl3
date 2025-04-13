@@ -47,7 +47,7 @@ if (-not (Test-Path "assets/shaders/bin")) {
 
 # Compile shaders
 Write-Log "Compiling shaders..." "INFO" "White"
-$shaderFiles = Get-ChildItem -Path "assets/shaders" -Filter "*.glsl" -Recurse
+$shaderFiles = Get-ChildItem -Path "assets/shaders" -Include "*.glsl.vert","*.glsl.frag" -Recurse
 $shaderCount = 0
 
 foreach ($shader in $shaderFiles) {
@@ -56,7 +56,11 @@ foreach ($shader in $shaderFiles) {
         continue
     }
     $shaderCount++
-    $outputPath = "assets/shaders/bin/$($shader.BaseName).spv"
+    # Extract the shader type (vert or frag) from the filename
+    $shaderType = if ($shader.Name -like "*.vert") { "vert" } else { "frag" }
+    # Replace .glsl with .spv in the filename
+    $outputName = $shader.BaseName -replace "\.glsl$", ".spv"
+    $outputPath = "assets/shaders/bin/$outputName.$shaderType"
     Write-Log "Compiling $($shader.Name)..." "INFO" "White"
     glslc $shader.FullName -o $outputPath
     if ($LASTEXITCODE -eq 0) {
