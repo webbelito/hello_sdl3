@@ -7,14 +7,20 @@ import "core:math/linalg"
 import "core:mem"
 
 import sdl "vendor:sdl3"
+import stbi "vendor:stb/image"
 
 default_context : runtime.Context
 
+Vec2 :: distinct [2]f32
 Vec3 :: distinct [3]f32
+
+Vec2i :: distinct [2]i32
+Vec3i :: distinct [3]i32
 
 Vertex_Data :: struct {
     position: Vec3,
     color: sdl.FColor,
+    uv: Vec2,
 }
 
 UBO :: struct {
@@ -24,6 +30,8 @@ UBO :: struct {
 WINDOW_WIDTH :: 1920
 WINDOW_HEIGHT :: 1080
 WINDOW_TITLE :: "Hello SDL"
+
+WHITE :: sdl.FColor { 1, 1, 1, 1 }
 
 // Load Shader file as binary
 vertex_shader_code := #load("../assets/shaders/bin/shader.spv.vert")
@@ -58,8 +66,26 @@ main :: proc() {
     ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
 
     // Load Shaders
-    vertex_shader := load_shader(gpu, vertex_shader_code, .VERTEX, 1)
-    fragment_shader := load_shader(gpu, fragment_shader_code, .FRAGMENT, 0)
+    vertex_shader := load_shader(gpu, vertex_shader_code, .VERTEX, num_uniform_buffers = 1, num_samplers = 0)
+    fragment_shader := load_shader(gpu, fragment_shader_code, .FRAGMENT, num_uniform_buffers = 0, num_samplers = 1)
+
+    
+    // Load the image
+    image_size: Vec2i
+    
+    image_pixels := stbi.load("assets/textures/cobblestone_1.png", &image_size.x, &image_size.y, nil, 4); assert(image_pixels != nil)
+    image_pixles_byte_size := image_size.x * image_size.y * 4
+    
+    // Create a Texture
+    texture := sdl.CreateGPUTexture(gpu, {
+        format = .R8G8B8A8_UNORM,
+        usage = {.SAMPLER}, 
+        width = u32(image_size.x),
+        height = u32(image_size.y),
+        layer_count_or_depth = 1,
+        num_levels = 1,
+    }); assert(texture != nil)
+
 
     // *
     // * Vertex Data
@@ -67,10 +93,10 @@ main :: proc() {
 
     // Create Vertex Data
     verticies := []Vertex_Data {
-        { position = { 0.5,  0.5, 0}, color = {0, 1, 1, 1} }, // Top Right
-        { position = { 0.5, -0.5, 0}, color = {1, 0, 1, 1} }, // Bottom Right
-        { position = {-0.5, -0.5, 0}, color = {1, 0, 1, 1} }, // Bottom Left
-        { position = {-0.5,  0.5, 0}, color = {1, 0, 0, 1} }, // Top Left
+        { position = { 0.5,  0.5, 0}, color = WHITE, uv = {1, 0} }, // Top Right
+        { position = { 0.5, -0.5, 0}, color = WHITE, uv = {1, 1} }, // Bottom Right
+        { position = {-0.5, -0.5, 0}, color = WHITE, uv = {0, 1} }, // Bottom Left
+        { position = {-0.5,  0.5, 0}, color = WHITE, uv = {0, 0} }, // Top Left
     }
 
     // Calculate the size of the vertex data
@@ -115,6 +141,21 @@ main :: proc() {
     // Unmap the Transfer Buffer
     sdl.UnmapGPUTransferBuffer(gpu, transfer_buf)
 
+    // Create a Texture Transfer Buffer
+    texture_transfer_buf := sdl.CreateGPUTransferBuffer(gpu, {
+        usage = .UPLOAD,
+        size = u32(image_pixles_byte_size),
+    }); assert(texture_transfer_buf != nil)
+
+    // Map the Texture Transfer Buffer
+    texture_transfer_mem := sdl.MapGPUTransferBuffer(gpu, texture_transfer_buf, false); assert(texture_transfer_mem != nil)
+
+    // Copy the Texture Data to the Texture Transfer Buffer
+    mem.copy(texture_transfer_mem, image_pixels, int(image_pixles_byte_size))
+
+    // Unmap the Texture Transfer Buffer
+    sdl.UnmapGPUTransferBuffer(gpu, texture_transfer_buf)
+
     // Create a Copy Command Buffer
     copy_command_buf := sdl.AcquireGPUCommandBuffer(gpu); assert(copy_command_buf != nil)
 
@@ -135,6 +176,13 @@ main :: proc() {
         false,
     )
 
+    // Upload the Texture Data to the Texture Buffer
+    sdl.UploadToGPUTexture(copy_pass, 
+        { transfer_buffer = texture_transfer_buf },
+        { texture = texture, w = u32(image_size.x), h = u32(image_size.y), d = 1 },
+        false,
+    )
+
     // End the Copy Pass
     sdl.EndGPUCopyPass(copy_pass)
 
@@ -143,6 +191,10 @@ main :: proc() {
 
     // Release the Copy Command Buffer
     sdl.ReleaseGPUTransferBuffer(gpu, transfer_buf)
+    sdl.ReleaseGPUTransferBuffer(gpu, texture_transfer_buf)
+
+    // Create a Sampler
+    sampler := sdl.CreateGPUSampler(gpu, {})
 
     // Create Vertex Attributes
     vertex_attributes := []sdl.GPUVertexAttribute {
@@ -155,6 +207,11 @@ main :: proc() {
             location = 1,
             format = .FLOAT4,
             offset = u32(offset_of(Vertex_Data, color)),
+        },
+        {
+            location = 2,
+            format = .FLOAT2,
+            offset = u32(offset_of(Vertex_Data, uv)),
         },
     }
 
@@ -241,7 +298,7 @@ main :: proc() {
         rotation += ROTATION_SPEED * delta_time
 
         // Create a Model Matrix
-        model_matrix := linalg.matrix4_translate_f32({0, 0, -5}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
+        model_matrix := linalg.matrix4_translate_f32({0, 0, -2}) * linalg.matrix4_rotate_f32(rotation, {0, 1, 0})
 
         // Create a UBO
         ubo := UBO {
@@ -274,6 +331,9 @@ main :: proc() {
             // Push the Vertex Uniform Data
             sdl.PushGPUVertexUniformData(command_buf, 0, &ubo, size_of(ubo))
 
+            // Bind the Fragment Sampler
+            sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = texture, sampler = sampler }), 1)
+
             // Draw the Indexed Primitives
             sdl.DrawGPUIndexedPrimitives(render_pass, 6, 1, 0, 0, 0)
 
@@ -289,7 +349,7 @@ main :: proc() {
 }
 
 
-load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, num_uniform_buffers: u32) -> ^sdl.GPUShader {
+load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStage, num_uniform_buffers: u32, num_samplers: u32) -> ^sdl.GPUShader {
 
     // Create a shader
     shader := sdl.CreateGPUShader(device, {
@@ -299,6 +359,7 @@ load_shader :: proc(device: ^sdl.GPUDevice, code: []u8, stage: sdl.GPUShaderStag
         format = {.SPIRV},
         stage = stage,
         num_uniform_buffers = num_uniform_buffers,
+        num_samplers = num_samplers,
     }); assert(shader != nil)
 
     return shader
