@@ -11,6 +11,10 @@ import "core:strings"
 import "core:path/filepath"
 import "core:os"
 
+import im "shared:imgui"
+import im_sdl "shared:imgui/imgui_impl_sdl3"
+import im_sdlgpu "shared:imgui/imgui_impl_sdlgpu3"
+
 import sdl "vendor:sdl3"
 import stbi "vendor:stb/image"
 
@@ -98,7 +102,7 @@ init :: proc() {
     window = sdl.CreateWindow(WINDOW_TITLE, WINDOW_WIDTH, WINDOW_HEIGHT, {}); assert(window != nil)
 
     // Initialize the GPU device
-    gpu = sdl.CreateGPUDevice({.DXIL, .MSL}, true, nil); assert(gpu != nil)
+    gpu = sdl.CreateGPUDevice({.SPIRV, .DXIL, .MSL}, true, nil); assert(gpu != nil)
 
     // Claim window for the GPU device
     ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
@@ -199,8 +203,20 @@ setup_pipeline :: proc() {
     
     // Create a Sampler
     sampler = sdl.CreateGPUSampler(gpu, {})
+
+    // Initialize ImGui
+    init_imgui()
 }
 
+init_imgui :: proc() {
+    im.CHECKVERSION()
+    im.CreateContext()
+    im_sdl.InitForSDLGPU(window)
+    im_sdlgpu.Init(&{
+        Device = gpu,
+        ColorTargetFormat = sdl.GetGPUSwapchainTextureFormat(gpu, window),
+    })
+}
 
 main :: proc() {
 
@@ -220,12 +236,16 @@ main :: proc() {
     // Rotation
     ROTATION_SPEED := linalg.to_radians(f32(90))
     rotation: f32
+    should_rotate: bool = true
 
     // Create a Projection Matrix (Camera)
     projection_matrix := linalg.matrix4_perspective_f32(linalg.to_radians(f32(90)), f32(window_size.x) / f32(window_size.y), 0.0001, 1000)
 
     // Delta Time
     last_tick := sdl.GetTicks()
+
+    // Clear Color
+    clear_color: sdl.FColor = {0, 0.2, 0.4, 1}
 
     // *
     // * Main Loop
@@ -244,27 +264,65 @@ main :: proc() {
         // Set the last tick
         last_tick = new_tick
 
+        ui_input_mode := !sdl.GetWindowRelativeMouseMode(window)
+
         // Process SDL events
         event: sdl.Event
         for sdl.PollEvent(&event) {
+            
+            // ImGui Events
+            if ui_input_mode do im_sdl.ProcessEvent(&event)
+            
             #partial switch event.type {
                 case .QUIT:
                     break main_loop
-                case .KEY_DOWN: 
-                    if event.key.scancode == .ESCAPE do break main_loop
+                case .KEY_DOWN:
+
+                    // Escape will Exit when not in UI Input Mode
+                    if !ui_input_mode {
+                        if event.key.scancode == .ESCAPE do break main_loop
+                    }
+                    
+                    // Tab will Toggle UI Input Mode
+                    if event.key.scancode == .F1 {
+                        ok := sdl.SetWindowRelativeMouseMode(window, ui_input_mode); assert(ok)
+                        ui_input_mode = !ui_input_mode
+                    }
+
+                    // Set the Key Down
                     key_down[event.key.scancode] = true
+
                 case .KEY_UP:
-                    key_down[event.key.scancode] = false
+                    if !ui_input_mode {
+                        key_down[event.key.scancode] = false
+                    }
                 case .MOUSE_MOTION:
-                    mouse_movement = {f32(event.motion.xrel), f32(event.motion.yrel)}
+                    if !ui_input_mode {
+                        mouse_movement = {f32(event.motion.xrel), f32(event.motion.yrel)}
+                    }
             }
         }
+
+        // *
+        // * ImGui
+        // *
+
+        im_sdlgpu.NewFrame()
+        im_sdl.NewFrame()
+        im.NewFrame()
+
+        if im.Begin("Inspector") {
+            im.Checkbox("Rotate", &should_rotate)
+            im.ColorEdit3("Clear Color", transmute(^[3]f32)&clear_color)
+        }
+        im.End()
+
 
         // *
         // * Update Game State
         // *
 
-        rotation += ROTATION_SPEED * delta_time
+        if should_rotate do rotation += ROTATION_SPEED * delta_time
         update_camera(delta_time)
         
         // *
@@ -291,6 +349,11 @@ main :: proc() {
             material_view_projection = projection_matrix * view_matrix * model_matrix,
         }
 
+        // * ImGui Render
+        im.Render()
+        im_draw_data := im.GetDrawData()
+
+
         // Draw if we have a swapchain texture
         if swapchain_texture != nil {
         
@@ -298,7 +361,7 @@ main :: proc() {
             color_target  := sdl.GPUColorTargetInfo {
                 texture = swapchain_texture,
                 load_op = .CLEAR,
-                clear_color = {0, 0.2, 0.4, 1},
+                clear_color = clear_color,
                 store_op = .STORE,
             }
 
@@ -334,6 +397,23 @@ main :: proc() {
             // End the render pass
             sdl.EndGPURenderPass(render_pass)
 
+            // Prepare ImGui Draw Data
+            im_sdlgpu.PrepareDrawData(im_draw_data, command_buf)
+            im_color_target := sdl.GPUColorTargetInfo {
+                texture = swapchain_texture,
+                load_op = .LOAD,
+                store_op = .STORE,
+            }
+
+            // Begin a render pass
+            im_render_pass := sdl.BeginGPURenderPass(command_buf, &im_color_target, 1, nil); assert(im_render_pass != nil)
+
+            // Render the ImGui Draw Data
+            im_sdlgpu.RenderDrawData(im_draw_data, command_buf, im_render_pass)
+
+            // End the render pass
+            sdl.EndGPURenderPass(im_render_pass)
+            
         }
 
         // Submit the command buffer
