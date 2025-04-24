@@ -107,6 +107,9 @@ init :: proc() {
     // Claim window for the GPU device
     ok = sdl.ClaimWindowForGPUDevice(gpu, window); assert(ok)
 
+    // Set the Swapchain to SDR Linear
+    ok = sdl.SetGPUSwapchainParameters(gpu, window, .SDR_LINEAR, .VSYNC); assert(ok)
+
     // Get the Window Size
     ok = sdl.GetWindowSize(window, &window_size.x, &window_size.y); assert(ok)
     
@@ -190,7 +193,7 @@ setup_pipeline :: proc() {
         target_info = {
             num_color_targets = 1,
             color_target_descriptions = &(sdl.GPUColorTargetDescription {
-                format = sdl.GetGPUSwapchainTextureFormat(gpu ,window),
+                format = sdl.GetGPUSwapchainTextureFormat(gpu, window),
             }),
             has_depth_stencil_target = true,
             depth_stencil_format = depth_texture_format,
@@ -216,6 +219,11 @@ init_imgui :: proc() {
         Device = gpu,
         ColorTargetFormat = sdl.GetGPUSwapchainTextureFormat(gpu, window),
     })
+
+    style := im.GetStyle()
+    for &color in style.Colors {
+        color.rgb = linalg.pow(color.rgb, 2.2)
+    }
 }
 
 main :: proc() {
@@ -245,7 +253,7 @@ main :: proc() {
     last_tick := sdl.GetTicks()
 
     // Clear Color
-    clear_color: sdl.FColor = {0, 0.2, 0.4, 1}
+    clear_color: sdl.FColor = {0, 0.0312, 0.1276, 1}
 
     // *
     // * Main Loop
@@ -313,11 +321,10 @@ main :: proc() {
 
         if im.Begin("Inspector") {
             im.Checkbox("Rotate", &should_rotate)
-            im.ColorEdit3("Clear Color", transmute(^[3]f32)&clear_color)
+            im.ColorEdit3("Clear Color", transmute(^[3]f32)&clear_color, {.Float})
         }
         im.End()
-
-
+        
         // *
         // * Update Game State
         // *
@@ -558,7 +565,7 @@ load_model :: proc(mesh_file: string, texture_file: string) -> Model {
     
     // Create a Texture
     texture := sdl.CreateGPUTexture(gpu, {
-        format = .R8G8B8A8_UNORM,
+        format = .R8G8B8A8_UNORM_SRGB,
         usage = {.SAMPLER}, 
         width = u32(image_size.x),
         height = u32(image_size.y),
