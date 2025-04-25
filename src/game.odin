@@ -5,7 +5,6 @@ import "core:math/linalg"
 import "core:slice"
 
 import sdl "vendor:sdl3"
-
 ROTATION_SPEED :: f32(90) * linalg.RAD_PER_DEG
 
 game_init :: proc() {
@@ -57,7 +56,12 @@ game_init :: proc() {
     g.should_rotate = true
 
     // Initialize the Clear Color
-    g.clear_color = {0, 0.0312, 0.1276, 1}
+    g.clear_color = 0
+
+    // Initialize the Light
+    g.light_position = {3, 3, 3}
+    g.light_color = {1, 1, 1}
+    g.light_intensity = 1
 
     // Initialize the Camera
     camera_init()
@@ -85,6 +89,16 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
     // Create a View Matrix
     view_matrix := linalg.matrix4_look_at_f32(g.camera.position, g.camera.target, {0, 1, 0})
 
+    // Create a UBO for the Fragment Shader
+    ubo_frag_global := UBO_Frag_Global {
+        light_position = g.light_position,
+        light_color = g.light_color,
+        light_intensity = g.light_intensity,
+    }
+
+    // Push the UBO for the Fragment Shader
+    sdl.PushGPUFragmentUniformData(command_buf, 0, &ubo_frag_global, size_of(ubo_frag_global))
+    
     // Create a color target
     color_target  := sdl.GPUColorTargetInfo {
         texture = swapchain_texture,
@@ -109,9 +123,11 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
         // Create a Model Matrix
         model_matrix := linalg.matrix4_from_trs_f32(entity.position, entity.rotation, 1)
 
+
         // Create a UBO
         ubo := UBO {
-            material_view_projection = g.projection_matrix * view_matrix * model_matrix,
+            view_projection = g.projection_matrix * view_matrix,
+            material = model_matrix,
         }
 
         // Push the Vertex Uniform Data
@@ -163,6 +179,11 @@ game_setup_pipeline :: proc() {
             location = 2,
             format = .FLOAT2,
             offset = u32(offset_of(Vertex_Data, uv)),
+        },
+        {
+            location = 3,
+            format = .FLOAT3,
+            offset = u32(offset_of(Vertex_Data, normal)),
         },
     }
     

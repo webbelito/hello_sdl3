@@ -11,10 +11,19 @@ Vertex_Data :: struct {
     position: Vec3,
     color: sdl.FColor,
     uv: Vec2,
+    normal: Vec3,
 }
 
 UBO :: struct {
-    material_view_projection: matrix[4, 4]f32,
+    view_projection: Mat4,
+    material: Mat4,
+}
+
+UBO_Frag_Global :: struct #packed {
+    light_position: Vec3,
+    _: f32,
+    light_color: Vec3,
+    light_intensity: f32,
 }
 
 Mesh :: struct {
@@ -66,6 +75,7 @@ asset_load_obj_file :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string) -> M
         uv := obj_data.uvs[face.uv]
         verticies[i] = Vertex_Data {
             position = obj_data.positions[face.position],
+            normal = obj_data.normals[face.normal],
             color = WHITE,
             uv = {uv.x, 1 - uv.y},
         }

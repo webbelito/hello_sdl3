@@ -25,6 +25,9 @@ Globals :: struct {
     models: []Model,
     entities: []Entity,
     projection_matrix: matrix[4, 4]f32,
+    light_position: Vec3,
+    light_color: Vec3,
+    light_intensity: f32,
 }
 
 // Common Constants

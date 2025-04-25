@@ -7,12 +7,14 @@ import "core:log"
 
 Obj_Data :: struct {
     positions: []Vec3,
+    normals: []Vec3,
     uvs: []Vec2,
     faces: []Obj_FaceIndex,
 }
 
 Obj_FaceIndex :: struct {
     position: uint,
+    normal: uint,
     uv: uint,
 }
 
@@ -23,6 +25,7 @@ obj_load :: proc(filename: string) -> Obj_Data {
     input_string := string(data)
 
     positions := make([dynamic]Vec3)
+    normals := make([dynamic]Vec3)
     uvs := make([dynamic]Vec2)
     faces := make([dynamic]Obj_FaceIndex)
 
@@ -37,8 +40,12 @@ obj_load :: proc(filename: string) -> Obj_Data {
             switch line[1] {
             case ' ':
                 // Vertex position
-                position := obj_parse_position(line[2:])
+                position := obj_parse_vec3(line[2:])
                 append(&positions, position)
+            case 'n':
+                // Vertex normal
+                normal := obj_parse_vec3(line[3:])
+                append(&normals, normal)
             case 't':
                 // Vertex texture
                 uv := obj_parse_uv(line[3:])
@@ -55,6 +62,7 @@ obj_load :: proc(filename: string) -> Obj_Data {
 
     return {
         positions = positions[:],
+        normals = normals[:],
         uvs = uvs[:],
         faces = faces[:],
     }
@@ -62,6 +70,7 @@ obj_load :: proc(filename: string) -> Obj_Data {
 
 obj_destroy :: proc(data: Obj_Data) {
     delete(data.positions)
+    delete(data.normals)
     delete(data.uvs)
     delete(data.faces)
 }
@@ -84,7 +93,7 @@ obj_parse_uint :: proc(value: string) -> uint {
     return result
 }
 
-obj_parse_position :: proc(s: string) -> Vec3 {
+obj_parse_vec3 :: proc(s: string) -> Vec3 {
     s := s
 
     return {
@@ -109,6 +118,7 @@ obj_parse_face_index :: proc(s: string) -> Obj_FaceIndex {
     return {
         position = obj_parse_uint(obj_extract_separated(&s, '/')) - 1,
         uv = obj_parse_uint(obj_extract_separated(&s, '/')) - 1,
+        normal = obj_parse_uint(obj_extract_separated(&s, '/')) - 1,
     }
     
 }

@@ -22,6 +22,9 @@ WINDOW_TITLE :: "Fenrir"
 
 init :: proc() {
 
+    // Initialize the logger
+    context.logger = log.create_console_logger()
+
     // Init SDL Log Context
     init_sdl_logging()
 
@@ -208,10 +211,5 @@ main :: proc() {
         // Submit the command buffer
         ok = sdl.SubmitGPUCommandBuffer(command_buf); sdl_assert(ok)
     }
-
-}
-
-update_camera :: proc(dt: f32) {
-
 
 }
