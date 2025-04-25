@@ -146,18 +146,40 @@ init :: proc() {
 }
 
 init_sdl_logging :: proc() {
+    
     @static sdl_log_context: runtime.Context
+    
     sdl_log_context = context
     sdl_log_context.logger.options = {.Short_File_Path, .Line, .Procedure}
+    
     sdl.SetLogPriorities(.VERBOSE)
-    sdl.SetLogOutputFunction(proc "c" (userdata: rawptr, category: sdl.LogCategory, priority: sdl.LogPriority, message: cstring) {
-        context = sdl_log_context
-        log.debugf("sdl: {} [{}]: {}", category, priority, message)
-    }, nil)
+    sdl.SetLogOutputFunction(sdl_log, &sdl_log_context)
+
 }
 
 sdl_assert :: proc(ok: bool) {
     if !ok do log.panicf("SDL Error: {}", sdl.GetError())
+}
+
+sdl_log :: proc "c" (userdata: rawptr, category: sdl.LogCategory, priority: sdl.LogPriority, message: cstring) {
+    
+    // Set the Context
+    context = (transmute(^runtime.Context)userdata)^
+
+    // Set the Log Level
+    level: log.Level
+
+    // Set the Log Level
+    switch priority {
+    case .INVALID, .TRACE, .VERBOSE, .DEBUG: level = .Debug
+    case .INFO: level = .Info
+    case .WARN: level = .Warning
+    case .ERROR: level = .Error
+    case .CRITICAL: level = .Fatal
+    }
+
+    // Log the Message
+    log.logf(level, "SDL {}: {}", category, message)   
 }
 
 setup_pipeline :: proc() {
