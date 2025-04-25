@@ -27,7 +27,7 @@ gpu_upload_texture :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: []u8, width: u32
     texture_transfer_mem := sdl.MapGPUTransferBuffer(g.gpu, texture_transfer_buf, false); sdl_assert(texture_transfer_mem != nil)
 
     // Copy the Texture Data to the Texture Transfer Buffer
-    mem.copy(texture_transfer_mem, raw_data(pixels), int(len(pixels)))
+    mem.copy(texture_transfer_mem, raw_data(pixels), len(pixels))
 
     // Unmap the Texture Transfer Buffer
     sdl.UnmapGPUTransferBuffer(g.gpu, texture_transfer_buf)

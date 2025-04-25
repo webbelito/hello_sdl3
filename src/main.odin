@@ -9,9 +9,10 @@ import "core:math/linalg"
 import "core:mem"
 import "core:strings"
 import "core:path/filepath"
-import "core:os"
 
 import sdl "vendor:sdl3"
+
+import im "shared:imgui"
 
 sdl_log_context: runtime.Context
 
@@ -116,8 +117,8 @@ main :: proc() {
     // Delta Time
     last_tick := sdl.GetTicks()
 
-    // Clear Color
-    g.clear_color = {0, 0.0312, 0.1276, 1}
+    // ImGui IO
+    im_io := im.GetIO()
 
     // *
     // * Main Loop
@@ -150,9 +151,12 @@ main :: proc() {
                     break main_loop
                 case .KEY_DOWN:
 
-                    // Escape will Exit when not in UI Input Mode
+                    // Escape will Exit when ImGui is not capturing the keyboard (e.g. when a text input is active)
+                    if event.key.scancode == .ESCAPE && !im_io.WantCaptureKeyboard do break main_loop
+
+                    // Set the Key Down
                     if !ui_input_mode {
-                        if event.key.scancode == .ESCAPE do break main_loop
+                        g.key_down[event.key.scancode] = true
                     }
                     
                     // Tab will Toggle UI Input Mode
@@ -161,13 +165,8 @@ main :: proc() {
                         ui_input_mode = !ui_input_mode
                     }
 
-                    // Set the Key Down
-                    g.key_down[event.key.scancode] = true
-
                 case .KEY_UP:
-                    if !ui_input_mode {
-                        g.key_down[event.key.scancode] = false
-                    }
+                    g.key_down[event.key.scancode] = false
                 case .MOUSE_MOTION:
                     if !ui_input_mode {
                         g.mouse_movement = {f32(event.motion.xrel), f32(event.motion.yrel)}

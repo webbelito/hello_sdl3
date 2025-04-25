@@ -24,6 +24,12 @@ game_init :: proc() {
         asset_load_model(copy_pass, "sedan-sports.obj", "colormap.png"),
         asset_load_model(copy_pass, "ambulance.obj", "colormap.png"),
     })
+    
+    // End the Copy Pass
+    sdl.EndGPUCopyPass(copy_pass)
+
+    // Submit the Copy Command Buffer
+    ok := sdl.SubmitGPUCommandBuffer(copy_command_buf); sdl_assert(ok)
 
     // Create the Entities
     g.entities = slice.clone([]Entity {
@@ -47,14 +53,13 @@ game_init :: proc() {
         },
     })
 
-    // End the Copy Pass
-    sdl.EndGPUCopyPass(copy_pass)
-
-    // Submit the Copy Command Buffer
-    ok := sdl.SubmitGPUCommandBuffer(copy_command_buf); sdl_assert(ok)
-
+    // Initialize the Should Rotate Flag
     g.should_rotate = true
 
+    // Initialize the Clear Color
+    g.clear_color = {0, 0.0312, 0.1276, 1}
+
+    // Initialize the Camera
     camera_init()
 }
 

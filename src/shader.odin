@@ -63,8 +63,8 @@ shader_load :: proc(device: ^sdl.GPUDevice, shader_file: string) -> ^sdl.GPUShad
     }
 
     // Load the shader code
-    shaderfile := filepath.join({ASSETS_DIR, "shaders", "bin", shader_file}, context.temp_allocator)
-    filename := strings.concatenate({shaderfile, format_ext})
+    shaderfile := filepath.join({ASSETS_DIR, "shaders", "bin", shader_file}, context.temp_allocator);
+    filename := strings.concatenate({shaderfile, format_ext}, context.temp_allocator); sdl_assert(os.exists(filename))
     code, ok := os.read_entire_file_from_filename(filename, context.temp_allocator); sdl_assert(ok)
 
     // Load the shader info from the Shader json file
