@@ -22,8 +22,8 @@ Globals :: struct {
     mouse_movement: Vec2,
     clear_color: sdl.FColor,
     should_rotate: bool,
-    rotation: f32,
-    model: Model,
+    models: []Model,
+    entities: []Entity,
     projection_matrix: matrix[4, 4]f32,
 }
 
@@ -42,6 +42,7 @@ Vec3i :: [3]i32
 
 Mat4 :: matrix[4, 4]f32
 
+Quat :: quaternion128
 
 // Common Variables
 

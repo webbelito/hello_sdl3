@@ -112,7 +112,6 @@ main :: proc() {
 
     init()
     game_init()
-    camera_init()
 
     // Delta Time
     last_tick := sdl.GetTicks()
@@ -176,17 +175,11 @@ main :: proc() {
             }
         }
 
-        
         // *
-        // * Update Game State
+        // * Update
         // *
 
         game_update(delta_time)
-
-        // *
-        // * Update ImGui
-        // *
-
         imgui_update(delta_time)
         
         // *
@@ -202,66 +195,15 @@ main :: proc() {
         // Wait for the swapchain texture and acquire it
         ok := sdl.WaitAndAcquireGPUSwapchainTexture(command_buf, g.window, &swapchain_texture, nil, nil); sdl_assert(ok)
 
-        // Create a View Matrix
-        view_matrix := linalg.matrix4_look_at_f32(g.camera.position, g.camera.target, {0, 1, 0})
-
-        // Create a Model Matrix
-        model_matrix := linalg.matrix4_translate_f32({0, 0, 0}) * linalg.matrix4_rotate_f32(g.rotation, {0, 1, 0})
-
-        // Create a UBO
-        ubo := UBO {
-            material_view_projection = g.projection_matrix * view_matrix * model_matrix,
-        }
-
-        // Draw if we have a swapchain texture
+        // Only render if we have a swapchain texture
         if swapchain_texture != nil {
-        
-            // Create a color target
-            color_target  := sdl.GPUColorTargetInfo {
-                texture = swapchain_texture,
-                load_op = .CLEAR,
-                clear_color = g.clear_color,
-                store_op = .STORE,
-            }
-
-            // Create a depth target info
-            depth_target_info := sdl.GPUDepthStencilTargetInfo {
-                texture = g.depth_texture,
-                load_op = .CLEAR,
-                clear_depth = 1,
-                store_op = .DONT_CARE,
-            }
-
-            // Begin a render pass
-            render_pass := sdl.BeginGPURenderPass(command_buf, &color_target, 1, &depth_target_info); sdl_assert(render_pass != nil)
-
-
-            // Push the Vertex Uniform Data
-            sdl.PushGPUVertexUniformData(command_buf, 0, &ubo, size_of(ubo))
             
-            // Bind the Graphics Pipeline
-            sdl.BindGPUGraphicsPipeline(render_pass, g.pipeline)
+            // Render the Game
+            game_render(command_buf, swapchain_texture)
 
-            // Bind the Vertex Buffer
-            sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = g.model.vertex_buf }), 1)
-
-            // Bind the Index Buffer
-            sdl.BindGPUIndexBuffer(render_pass, { buffer = g.model.index_buf }, ._16BIT)
-
-            // Bind the Fragment Sampler
-            sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = g.model.texture, sampler = g.sampler }), 1)
-
-            // Draw the Indexed Primitives
-            sdl.DrawGPUIndexedPrimitives(render_pass, g.model.num_indicies, 1, 0, 0, 0)
-
-            // End the main render pass
-            sdl.EndGPURenderPass(render_pass)
-
-            // *
-            // * ImGui
-            // *
+            // Render the ImGui
             imgui_render(command_buf, swapchain_texture)
-            
+        
         }
 
         // Submit the command buffer

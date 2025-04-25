@@ -27,8 +27,6 @@ camera_init :: proc() {
         target = {0, PLAYER_HEIGHT, 0},
     }
 
-    // Create a Projection Matrix (Camera)
-    g.projection_matrix = linalg.matrix4_perspective_f32(linalg.to_radians(f32(90)), f32(g.window_size.x) / f32(g.window_size.y), 0.0001, 1000)
 }
 
 camera_update :: proc(delta_time: f32) {
