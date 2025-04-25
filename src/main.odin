@@ -69,13 +69,6 @@ UBO :: struct {
     material_view_projection: matrix[4, 4]f32,
 }
 
-Shader_Info :: struct {
-    samplers: u32,
-    storage_textures: u32,
-    storage_buffers: u32,
-    uniform_buffers: u32,
-}
-
 WINDOW_WIDTH :: 1920
 WINDOW_HEIGHT :: 1080
 WINDOW_TITLE :: "Hello SDL"
@@ -185,8 +178,8 @@ sdl_log :: proc "c" (userdata: rawptr, category: sdl.LogCategory, priority: sdl.
 setup_pipeline :: proc() {
 
     // Load Shaders
-    vertex_shader := load_shader(g.gpu, "shader.vert")
-    fragment_shader := load_shader(g.gpu, "shader.frag")
+    vertex_shader := shader_load(g.gpu, "shader.vert")
+    fragment_shader := shader_load(g.gpu, "shader.frag")
 
     // Create Vertex Attributes
     vertex_attributes := []sdl.GPUVertexAttribute {
@@ -510,86 +503,8 @@ update_camera :: proc(dt: f32) {
 
 }
 
-load_shader_info :: proc(shader_file: string) -> Shader_Info {
-
-    // Load the JSON file
-    json_filename := strings.concatenate({shader_file, ".json"}, context.temp_allocator)
-
-    log.debugf("Loading shader info from {}", json_filename)
-
-    json_data, ok := os.read_entire_file_from_filename(json_filename, context.temp_allocator); sdl_assert(ok)
-
-    shader_info: Shader_Info
-
-    err := json.unmarshal(json_data, &shader_info, allocator = context.temp_allocator); sdl_assert(err == nil)
-
-    return shader_info
-}
-
-load_shader :: proc(device: ^sdl.GPUDevice, shader_file: string) -> ^sdl.GPUShader {
-
-
-    // Determine shader stage
-    stage: sdl.GPUShaderStage
-    
-    switch filepath.ext(shader_file) {
-    case ".vert":
-        stage = .VERTEX
-    case ".frag":
-        stage = .FRAGMENT
-    }
-
-    // Format flag
-    format: sdl.GPUShaderFormat
-    format_ext: string 
-    
-    // Entrypoint
-    entrypoint: string
-
-    // Get the supported formats
-    supported_formats := sdl.GetGPUShaderFormats(device)
-
-    if .SPIRV in supported_formats {
-        format = {.SPIRV}
-        format_ext = ".spv"
-        entrypoint = "main"
-    } else if .DXIL in supported_formats {
-        format = {.DXIL}
-        format_ext = ".dxil"
-        entrypoint = "main"
-    } else if .MSL in supported_formats {
-        format = {.MSL}
-        format_ext = ".msl"
-        entrypoint = "main0"
-    } else {
-        log.errorf("No supported shader format found: {}", supported_formats)
-        os.exit(1)
-    }
-
-    // Load the shader code
-    shaderfile := filepath.join({ASSETS_DIR, "shaders", "bin", shader_file}, context.temp_allocator)
-    filename := strings.concatenate({shaderfile, format_ext})
-    code, ok := os.read_entire_file_from_filename(filename, context.temp_allocator); sdl_assert(ok)
-
-    // Load the shader info from the Shader json file
-    shader_info := load_shader_info(shaderfile)
-
-    // Create a shader
-    return sdl.CreateGPUShader(device, {
-        code_size = len(code),
-        code = raw_data(code),
-        entrypoint = strings.clone_to_cstring(entrypoint, context.temp_allocator),
-        format = format,
-        stage = stage, 
-        num_uniform_buffers = shader_info.uniform_buffers,
-        num_samplers = shader_info.samplers,
-        num_storage_textures = shader_info.storage_textures,
-        num_storage_buffers = shader_info.storage_buffers,
-    })
-
-}
-
 load_model :: proc(mesh_file: string, texture_file: string) -> Model {
+
 
     mesh_path := filepath.join({ASSETS_DIR, "meshes", mesh_file}, context.temp_allocator)
     texture_path := filepath.join({ASSETS_DIR, "textures", texture_file}, context.temp_allocator)
