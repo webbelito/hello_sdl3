@@ -18,7 +18,7 @@ main :: proc() {
     context.logger = log.create_console_logger()
 
     // Build the executable
-    run_str("odin build src -debug -out:" + OUT)
+    run_str("odin build src -debug -out:" + OUT + " --error-pos-style:unix")
 
     // Create a bin directory if it doesn't exist
     if !os.exists("bin") {
