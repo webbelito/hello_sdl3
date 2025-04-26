@@ -7,6 +7,29 @@ import "core:slice"
 import sdl "vendor:sdl3"
 ROTATION_SPEED :: f32(90) * linalg.RAD_PER_DEG
 
+
+Game_State :: struct {
+    pipeline: ^sdl.GPUGraphicsPipeline,
+    sampler: ^sdl.GPUSampler,
+
+    projection_matrix: Mat4,
+
+    camera: Camera,
+    look: Look,
+
+    clear_color: sdl.FColor,
+    should_rotate: bool,
+
+    models: []Model,
+    entities: []Entity,
+
+    light_position: Vec3,
+    light_color: Vec3,
+    light_intensity: f32,
+
+    ambient_light_color: Vec3,
+}
+
 game_init :: proc() {
 
     game_setup_pipeline()
@@ -19,9 +42,9 @@ game_init :: proc() {
     
     // Load the Models
     g.models = slice.clone([]Model {
-        asset_load_model(copy_pass, "tractor-police.obj", "colormap.png"),
-        asset_load_model(copy_pass, "sedan-sports.obj", "colormap.png"),
-        asset_load_model(copy_pass, "ambulance.obj", "colormap.png"),
+        asset_load_model(copy_pass, "tractor-police.obj", "colormap.png", 0, 1),
+        asset_load_model(copy_pass, "sedan-sports.obj", "colormap.png", 1, 160),
+        asset_load_model(copy_pass, "ambulance.obj", "colormap.png", {1,0,0}, 80),
     })
     
     // End the Copy Pass
@@ -63,6 +86,8 @@ game_init :: proc() {
     g.light_color = {1, 1, 1}
     g.light_intensity = 1
 
+    // Initialize the Ambient Light
+    g.ambient_light_color = 0.01
     // Initialize the Camera
     camera_init()
 }
@@ -89,11 +114,21 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
     // Create a View Matrix
     view_matrix := linalg.matrix4_look_at_f32(g.camera.position, g.camera.target, {0, 1, 0})
 
+    // Create a UBO for the Vertex Shader
+    ubo_vertex_global := UBO_Vertex_Global {
+        view_projection_matrix = g.projection_matrix * view_matrix,
+    }
+
+    // Push the UBO for the Vertex Shader
+    sdl.PushGPUVertexUniformData(command_buf, 0, &ubo_vertex_global, size_of(ubo_vertex_global))
+
     // Create a UBO for the Fragment Shader
     ubo_frag_global := UBO_Frag_Global {
         light_position = g.light_position,
         light_color = g.light_color,
         light_intensity = g.light_intensity,
+        view_position = g.camera.position,
+        ambient_light_color = g.ambient_light_color,
     }
 
     // Push the UBO for the Fragment Shader
@@ -118,26 +153,43 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
     // Begin a render pass
     render_pass := sdl.BeginGPURenderPass(command_buf, &color_target, 1, &depth_target_info); sdl_assert(render_pass != nil)
 
+    // Bind the Graphics Pipeline
+    sdl.BindGPUGraphicsPipeline(render_pass, g.pipeline)
+
     for entity in g.entities {
     
         // Create a Model Matrix
         model_matrix := linalg.matrix4_from_trs_f32(entity.position, entity.rotation, 1)
 
+        // Create a Normal Matrix
+        normal_matrix := linalg.inverse_transpose(model_matrix)
 
         // Create a UBO
-        ubo := UBO {
-            view_projection = g.projection_matrix * view_matrix,
-            material = model_matrix,
+        ubo_vertex_local := UBO_Vertex_Local {
+            model_matrix = model_matrix,
+            normal_matrix = normal_matrix,
         }
 
         // Push the Vertex Uniform Data
-        sdl.PushGPUVertexUniformData(command_buf, 0, &ubo, size_of(ubo))
+        sdl.PushGPUVertexUniformData(command_buf, 1, &ubo_vertex_local, size_of(ubo_vertex_local))
         
         // Bind the Graphics Pipeline
         sdl.BindGPUGraphicsPipeline(render_pass, g.pipeline)
 
         model := g.models[entity.model_id]
 
+        // Create the material
+        material := model.material
+
+        // Create UBO for the Fragment Shader
+        ubo_frag_local := UBO_Frag_Local {
+            material_specular_color = material.specular_color,
+            material_shininess = material.specular_shininess,
+        }
+
+        // Push the Fragment Uniform Data
+        sdl.PushGPUFragmentUniformData(command_buf, 1, &ubo_frag_local, size_of(ubo_frag_local))
+        
         // Bind the Vertex Buffer
         sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = model.vertex_buf }), 1)
 
@@ -145,7 +197,7 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
         sdl.BindGPUIndexBuffer(render_pass, { buffer = model.index_buf }, ._16BIT)
 
         // Bind the Fragment Sampler
-        sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = model.texture, sampler = g.sampler }), 1)
+        sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = material.diffuse_texture, sampler = g.sampler }), 1)
 
         // Draw the Indexed Primitives
         sdl.DrawGPUIndexedPrimitives(render_pass, model.num_indicies, 1, 0, 0, 0)

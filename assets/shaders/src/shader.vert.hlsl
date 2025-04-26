@@ -1,7 +1,12 @@
-cbuffer UBO : register(b0, space1) { // TODO: Separate global and local UBOs
-    float4x4 view_projection;
-    float4x4 material;
-};
+cbuffer Global : register(b0, space1) {
+    float4x4 view_projection_matrix;
+}
+
+cbuffer Local : register(b1, space1) {
+    float4x4 model_matrix;
+    float4x4 normal_matrix;
+}
+
 
 struct Input {
     float3 position : TEXCOORD0;
@@ -20,13 +25,13 @@ struct Output {
 
 Output main(Input input) {
 
-    float4 world_position = mul(material, float4(input.position, 1));
+    float4 world_position = mul(model_matrix, float4(input.position, 1));
 
     Output output;
-    output.clip_position = mul(view_projection, world_position);
+    output.clip_position = mul(view_projection_matrix, world_position);
     output.color = input.color;
     output.uv = input.uv;
     output.position = world_position.xyz;
-    output.normal = normalize(mul(material, float4(input.normal, 0)).xyz); // TODO: use normal matrix to support non-uniform scales
+    output.normal = normalize(mul(normal_matrix, float4(input.normal, 0)).xyz); 
     return output;
 }

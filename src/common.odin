@@ -14,20 +14,9 @@ Globals :: struct {
     depth_texture_format: sdl.GPUTextureFormat,
     swapchain_texture: ^sdl.GPUTexture,
     swapchain_texture_format: sdl.GPUTextureFormat,
-    pipeline: ^sdl.GPUGraphicsPipeline,
-    sampler: ^sdl.GPUSampler,
-    camera: Camera,
-    look: Look,
     key_down: #sparse[sdl.Scancode]bool,
     mouse_movement: Vec2,
-    clear_color: sdl.FColor,
-    should_rotate: bool,
-    models: []Model,
-    entities: []Entity,
-    projection_matrix: matrix[4, 4]f32,
-    light_position: Vec3,
-    light_color: Vec3,
-    light_intensity: f32,
+    using game: Game_State,
 }
 
 // Common Constants

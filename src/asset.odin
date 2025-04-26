@@ -14,16 +14,29 @@ Vertex_Data :: struct {
     normal: Vec3,
 }
 
-UBO :: struct {
-    view_projection: Mat4,
-    material: Mat4,
+UBO_Vertex_Global :: struct #packed {
+    view_projection_matrix: Mat4,
 }
+
+UBO_Vertex_Local :: struct #packed {
+    model_matrix: Mat4,
+    normal_matrix: Mat4,
+}
+
 
 UBO_Frag_Global :: struct #packed {
     light_position: Vec3,
     _: f32,
     light_color: Vec3,
     light_intensity: f32,
+    view_position: Vec3,
+    _: f32,
+    ambient_light_color: Vec3,
+}
+
+UBO_Frag_Local :: struct #packed {
+    material_specular_color: Vec3,
+    material_shininess: f32,
 }
 
 Mesh :: struct {
@@ -34,8 +47,15 @@ Mesh :: struct {
 
 Model :: struct {
     using mesh: Mesh, // TODO: Remove temporary using
-    texture: ^sdl.GPUTexture,
+    material: Material,
 }
+
+Material :: struct {
+    diffuse_texture: ^sdl.GPUTexture,
+    specular_color: Vec3,
+    specular_shininess: f32,
+}
+
 
 asset_load_texture_file :: proc(copy_pass: ^sdl.GPUCopyPass, texture_file: string) -> ^sdl.GPUTexture {
 
@@ -96,16 +116,22 @@ asset_load_obj_file :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string) -> M
     return mesh
 }
 
-asset_load_model :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string, texture_file: string) -> Model {
+asset_load_model :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string, diffuse_texture_file: string, specular_color: Vec3, specular_shininess: f32) -> Model {
 
     // Load the texture
-    texture := asset_load_texture_file(copy_pass, texture_file)
+    diffuse_texture := asset_load_texture_file(copy_pass, diffuse_texture_file)
+
+    material := Material {
+        diffuse_texture = diffuse_texture,
+        specular_color = specular_color,
+        specular_shininess = specular_shininess,
+    }
 
     // Load the mesh
     mesh := asset_load_obj_file(copy_pass, mesh_file)
 
     return {
         mesh = mesh,
-        texture = texture,
+        material = material,
     }
 }

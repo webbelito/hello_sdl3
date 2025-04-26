@@ -1,6 +1,8 @@
 package main
 
+import "core:fmt"
 import "core:math/linalg"
+
 
 import sdl "vendor:sdl3"
 
@@ -69,11 +71,24 @@ imgui_update_inspector :: proc() {
     if im.Begin("Inspector") {
         im.Checkbox("Rotate", &g.should_rotate)
         im.ColorEdit3("Clear Color", transmute(^[3]f32)&g.clear_color, {.Float})
+        im.ColorEdit3("Ambient Light", &g.ambient_light_color, {.Float})
 
         im.SeparatorText("Light")
         im.DragFloat3("Position", &g.light_position, 0.1, -10, 10)
         im.ColorEdit3("Color", &g.light_color, {.Float})
         im.DragFloat("Intensity", &g.light_intensity, 0.01, 0, 1000)
+
+        for entity in g.entities {
+            im.PushIDInt(i32(entity.id))
+
+            im.SeparatorText(fmt.ctprintf("Entity {}", entity.id))
+
+            model := g.models[entity.model_id]
+            im.ColorEdit3("Specular Color", &model.material.specular_color, {.Float})
+            im.DragFloat("Shininess", &model.material.specular_shininess, 0.1, 0, 1000)
+
+            im.PopID()
+        }
     }
     im.End()
 }
