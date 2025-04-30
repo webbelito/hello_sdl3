@@ -65,7 +65,7 @@ game_init :: proc() {
         asset_load_model_from_obj_file(copy_pass, "tractor-police.obj", "colormap.png", 0, 1),
         asset_load_model_from_obj_file(copy_pass, "sedan-sports.obj", "colormap.png", 1, 160),
         asset_load_model_from_obj_file(copy_pass, "ambulance.obj", "colormap.png", {1,0,0}, 80),
-        asset_load_model_from_mesh(copy_pass, shapes_generate_plane_mesh(copy_pass, 10, 10), "cobblestone_1.png", specular_color = 0, specular_shininess = 1),
+        asset_load_model_from_mesh(copy_pass, shapes_generate_plane_mesh(copy_pass, 20, 20), "cobblestone_1.png", specular_color = 0, specular_shininess = 1),
         asset_load_model_from_mesh(copy_pass, shapes_generate_cube_mesh(copy_pass, 1, 1, 1), "wall_prototype_texture_01.png", specular_color = 1, specular_shininess = 100),
     })
     
@@ -111,7 +111,7 @@ game_init :: proc() {
         {
             id = 3,
             model_id = 3,
-            position = {0, -0.01, 0},
+            position = {0, 0, 0},
         },
         {
             id = 4,
