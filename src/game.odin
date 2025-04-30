@@ -111,6 +111,7 @@ game_init :: proc() {
         {
             id = 3,
             model_id = 3,
+            position = {0, -0.01, 0},
         },
         {
             id = 4,

@@ -39,7 +39,7 @@ shapes_generate_plane_mesh :: proc(copy_pass: ^sdl.GPUCopyPass, width: f32, dept
 	zBack := -depth * 0.5
 
 	dx := width / f32(segments_x)
-	dz := depth / f32(segments_z)
+	dz := -depth / f32(segments_z)
 
 	ctx := Shape_Context {
 		vertices = vertices,
@@ -92,18 +92,8 @@ shapes_generate_cube_mesh :: proc(copy_pass: ^sdl.GPUCopyPass, width: f32, heigh
 
 	// Calculate positive step distances per segment.
 	dx := width / f32(segments_x)
-	dy := height / f32(segments_y)
-	dz := depth / f32(segments_z)
-
-	// Calculate positive UV step sizes per segment.
-	sx := f32(max(1, segments_x))
-	sy := f32(max(1, segments_y))
-	sz := f32(max(1, segments_z))
-	u_step_x := 1 / sx
-	v_step_y := 1 / sy
-	u_step_z := 1 / sz
-	v_step_z := 1 / sz
-	v_step_x := 1 / sx
+	dy := -height / f32(segments_y)
+	dz := -depth / f32(segments_z)
 
 	// Initialize generation context.
 	ctx := Shape_Context {
@@ -113,56 +103,56 @@ shapes_generate_cube_mesh :: proc(copy_pass: ^sdl.GPUCopyPass, width: f32, heigh
 
 	// Build Left face (-X)
 	build_plane(&ctx,
-		start_position = {xLeft, yTop, zBack},
-		start_uv = {0, 0},
+		start_position = {xLeft, yTop, zFront},
+		start_uv = {1, 0},
 		normal = {-1, 0, 0},
-		row = {segments_y, {0, -dy, 0}, {0, v_step_y}},
-		col = {segments_z, {0, 0, dz}, {u_step_z, 0}},
+		row = {segments_z, {0, 0, dz}, {-1 / f32(segments_z), 0}},
+		col = {segments_y, {0, dy, 0}, {0, 1 / f32(segments_y)}},
 	)
 
 	// Build Right face (+X)
 	build_plane(&ctx,
-		start_position = {xRight, yTop, zFront},
-		start_uv = {0, 0},
+		start_position = {xRight, yTop, zBack},
+		start_uv = {1, 0},
 		normal = {1, 0, 0},
-		row = {segments_y, {0, -dy, 0}, {0, v_step_y}},
-		col = {segments_z, {0, 0, -dz}, {u_step_z, 0}},
+		row = {segments_z, {0, 0, -dz}, {-1 / f32(segments_z), 0}},
+		col = {segments_y, {0, dy, 0}, {0, 1 / f32(segments_y)}},
 	)
 
 	// Build Top face (+Y)
 	build_plane(&ctx,
 		start_position = {xLeft, yTop, zFront},
-		start_uv = {0, 0},
+		start_uv = {0, 1},
 		normal = {0, 1, 0},
-		row = {segments_x, {dx, 0, 0}, {u_step_x, 0}},
-		col = {segments_z, {0, 0, -dz}, {0, v_step_z}},
+		row = {segments_x, {dx, 0, 0}, {1 / f32(segments_x), 0}},
+		col = {segments_z, {0, 0, dz}, {0, -1 / f32(segments_z)}},
 	)
 
 	// Build Bottom face (-Y)
 	build_plane(&ctx,
-		start_position = {xLeft, yBottom, zBack},
-		start_uv = {0, 0},
+		start_position = {xRight, yBottom, zFront},
+		start_uv = {0, 1},
 		normal = {0, -1, 0},
-		row = {segments_x, {dx, 0, 0}, {u_step_x, 0}},
-		col = {segments_z, {0, 0, dz}, {0, v_step_z}},
+		row = {segments_x, {-dx, 0, 0}, {1 / f32(segments_x), 0}},
+		col = {segments_z, {0, 0, dz}, {0, -1 / f32(segments_z)}},
 	)
 
 	// Build Front face (+Z)
 	build_plane(&ctx,
-		start_position = {xRight, yTop, zFront},
-		start_uv = {1, 0}, // Adjusted UV start/step for orientation
+		start_position = {xLeft, yTop, zFront},
+		start_uv = {0, 0}, // Adjusted UV start/step for orientation
 		normal = {0, 0, 1},
-		row = {segments_x, {-dx, 0, 0}, {-u_step_x, 0}},
-		col = {segments_y, {0, -dy, 0}, {0, v_step_y}},
+		row = {segments_y, {0, dy, 0}, {0, 1 / f32(segments_y)}},
+		col = {segments_x, {dx, 0, 0}, {1 / f32(segments_x), 0}},
 	)
 
 	// Build Back face (-Z)
 	build_plane(&ctx,
-		start_position = {xLeft, yTop, zBack},
-		start_uv = {1, 0}, // Adjusted UV start/step for orientation
+		start_position = {xRight, yTop, zBack},
+		start_uv = {0, 0}, // Adjusted UV start/step for orientation
 		normal = {0, 0, -1},
-		row = {segments_x, {dx, 0, 0}, {-u_step_x, 0}},
-		col = {segments_y, {0, -dy, 0}, {0, v_step_y}},
+		row = {segments_y, {0, dy, 0}, {0, 1 / f32(segments_y)}},
+		col = {segments_x, {-dx, 0, 0}, {1 / f32(segments_x), 0}},
 	)
 
 	// Upload generated data to GPU.
