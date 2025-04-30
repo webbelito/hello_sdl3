@@ -46,6 +46,87 @@ gpu_upload_texture :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: []u8, width: u32
     return texture
 }
 
+gpu_upload_cubemap_texture_single :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: []byte, width: u32, height: u32) -> ^sdl.GPUTexture {
+
+    /* 
+    The cubemap images are stored in the following order:
+
+    -u--  
+    lfrb
+    -d--
+
+    */
+
+    CUBE_COLS :: 4
+    CUBE_ROWS :: 3
+
+    size := width / CUBE_COLS
+    assert(size * CUBE_COLS == width)
+    assert(size * CUBE_ROWS == height)
+
+    // Create a Texture
+    texture := sdl.CreateGPUTexture(g.gpu, {
+        format = .R8G8B8A8_UNORM_SRGB,
+        type = .CUBE,
+        usage = {.SAMPLER}, 
+        width = size,
+        height = size,
+        layer_count_or_depth = 6,
+        num_levels = 1,
+    }); sdl_assert(texture != nil)
+    
+    // Create a Texture Transfer Buffer
+    texture_transfer_buf := sdl.CreateGPUTransferBuffer(g.gpu, {
+        usage = .UPLOAD,
+        size = u32(len(pixels)),
+    }); sdl_assert(texture_transfer_buf != nil)
+
+    // Map the Texture Transfer Buffer
+    texture_transfer_mem := transmute([^]byte)sdl.MapGPUTransferBuffer(g.gpu, texture_transfer_buf, false); sdl_assert(texture_transfer_mem != nil)
+
+    // Copy the Texture Data to the Texture Transfer Buffer
+    mem.copy(texture_transfer_mem, raw_data(pixels), len(pixels))
+
+    // Unmap the Texture Transfer Buffer
+    sdl.UnmapGPUTransferBuffer(g.gpu, texture_transfer_buf)
+
+    for side in sdl.GPUCubeMapFace {
+        row, col: u32
+        switch side {
+            case .POSITIVEX:
+                row, col = 1,2
+            case .NEGATIVEX:
+                row, col = 1,0
+            case .POSITIVEY:
+                row, col = 0,1
+            case .NEGATIVEY:
+                row, col = 2,1
+            case .POSITIVEZ:
+                row, col = 1,1
+            case .NEGATIVEZ:
+                row, col = 1,3
+        }
+
+        BYTES_PER_PIXEL :: 4
+
+        cube_row_byte_size := width * size * BYTES_PER_PIXEL
+
+        offset := cube_row_byte_size * row
+        offset += size * BYTES_PER_PIXEL * col
+
+        // Upload the Texture Data to the Texture Buffer
+        sdl.UploadToGPUTexture(copy_pass, 
+            { transfer_buffer = texture_transfer_buf, offset = u32(offset), pixels_per_row = width },
+            { texture = texture, layer = u32(side), w = size, h = size, d = 1 },
+            false,
+        )
+        
+    }
+    
+    return texture
+
+}
+
 gpu_upload_cubemap_texture_split :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: [sdl.GPUCubeMapFace][]byte, size: u32) -> ^sdl.GPUTexture {
 
     // Create a Texture

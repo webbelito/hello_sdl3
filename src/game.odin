@@ -12,9 +12,11 @@ Game_State :: struct {
     default_sampler: ^sdl.GPUSampler,
     entity_pipeline: ^sdl.GPUGraphicsPipeline,
     
-    cubemap_pipeline: ^sdl.GPUGraphicsPipeline,
-    cubemap_mesh: Mesh,
-    cubemap_texture: ^sdl.GPUTexture,
+    skybox_pipeline: ^sdl.GPUGraphicsPipeline,
+    skybox_mesh: Mesh,
+    skybox_texture: ^sdl.GPUTexture,
+    skybox_texture_single: ^sdl.GPUTexture,
+    skybox_use_multi_image: bool,
 
     camera: Camera,
     projection_matrix: Mat4,
@@ -41,7 +43,7 @@ game_init :: proc() {
     // Setup the Pipelines
     game_setup_pipeline()
     game_setup_light_shape_pipeline()
-    game_setup_cubemap_pipeline()
+    game_setup_skybox_pipeline()
 
     // Configure Default Sampler
     g.default_sampler = sdl.CreateGPUSampler(g.gpu, {
@@ -68,8 +70,8 @@ game_init :: proc() {
     })
     
     // Load the Cubemap Texture
-    g.cubemap_mesh = shapes_generate_cube_mesh(copy_pass, 2, 2, 2)
-    g.cubemap_texture = assets_load_cubemap_texture_file(copy_pass, {
+    g.skybox_mesh = shapes_generate_cube_mesh(copy_pass, 2, 2, 2)
+    g.skybox_texture = assets_load_cubemap_texture_file(copy_pass, {
         .POSITIVEX = "skyboxes/right.png",
         .NEGATIVEX = "skyboxes/left.png",
         .POSITIVEY = "skyboxes/top.png",
@@ -77,6 +79,9 @@ game_init :: proc() {
         .POSITIVEZ = "skyboxes/front.png",
         .NEGATIVEZ = "skyboxes/back.png",
     })
+
+    g.skybox_texture_single = assets_load_cubemap_texture_single(copy_pass, "skyboxes/cubemap.png")
+    
     // End the Copy Pass
     sdl.EndGPUCopyPass(copy_pass)
 
@@ -154,6 +159,8 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
     // Create a UBO for the Vertex Shader
     ubo_vertex_global := UBO_Vertex_Global {
         view_projection_matrix = g.projection_matrix * view_matrix,
+        inverse_view_matrix = linalg.inverse(view_matrix),
+        inverse_projection_matrix = linalg.inverse(g.projection_matrix),
     }
 
     // Push the UBO for the Vertex Shader
@@ -273,29 +280,19 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
 
     }
 
-    // Cubemap Pipeline
+    // Skybox Pipeline
     {
 
+        skybox_active_texture := g.skybox_use_multi_image ? g.skybox_texture : g.skybox_texture_single
+
         // Bind the Graphics Pipeline
-        sdl.BindGPUGraphicsPipeline(render_pass, g.cubemap_pipeline)
+        sdl.BindGPUGraphicsPipeline(render_pass, g.skybox_pipeline)
  
-        // Create a Model Matrix
-        model_matrix := linalg.matrix4_translate_f32({-3, 1, 3})
-
-        // Push the Model Matrix Vertex Uniform Data
-        sdl.PushGPUVertexUniformData(command_buf, 1, &model_matrix, size_of(model_matrix))
-
         // Bind the Fragment Sampler
-        sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = g.cubemap_texture, sampler = g.default_sampler }), 1)
-
-        // Bind the Cubemap Vertex Buffer
-        sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = g.cubemap_mesh.vertex_buf }), 1)
-
-        // Bind the Cubemap Index Buffer
-        sdl.BindGPUIndexBuffer(render_pass, { buffer = g.cubemap_mesh.index_buf }, ._16BIT)
+        sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = skybox_active_texture, sampler = g.default_sampler }), 1)
 
         // Draw the Cubemap
-        sdl.DrawGPUIndexedPrimitives(render_pass, g.cubemap_mesh.num_indicies, 1, 0, 0, 0)
+        sdl.DrawGPUPrimitives(render_pass, 3, 1, 0, 0)
 
         
     }
@@ -432,52 +429,34 @@ game_setup_light_shape_pipeline :: proc() {
     sdl.ReleaseGPUShader(g.gpu, fragment_shader)
 }
 
-game_setup_cubemap_pipeline :: proc() {
+game_setup_skybox_pipeline :: proc() {
 
     // Load Shaders
-    vertex_shader := shader_load(g.gpu, "cubemap.vert")
-    fragment_shader := shader_load(g.gpu, "cubemap.frag")
+    vertex_shader := shader_load(g.gpu, "skybox.vert")
+    fragment_shader := shader_load(g.gpu, "skybox.frag")
 
-    // Create Vertex Attributes
-    vertex_attributes := []sdl.GPUVertexAttribute {
-        {
-            location = 0,
-            format = .FLOAT3,
-            offset = u32(offset_of(Vertex_Data, position)),
-        },
-    }
-    
     // Create a Graphics Pipeline
-    g.cubemap_pipeline = sdl.CreateGPUGraphicsPipeline(g.gpu, {
+    g.skybox_pipeline = sdl.CreateGPUGraphicsPipeline(g.gpu, {
         vertex_shader = vertex_shader,
         fragment_shader = fragment_shader,
         primitive_type = .TRIANGLELIST,
-        vertex_input_state = {
-            num_vertex_buffers = 1,
-            num_vertex_attributes = u32(len(vertex_attributes)),
-            vertex_buffer_descriptions = &(sdl.GPUVertexBufferDescription {
-                slot = 0,
-                pitch = size_of(Vertex_Data),
-            }),
-            vertex_attributes = raw_data(vertex_attributes),
-        },
         depth_stencil_state = {
             enable_depth_test = true,
-            enable_depth_write = true,
-            compare_op = .LESS,
+            enable_depth_write = false,
+            compare_op = .EQUAL,
         },
         rasterizer_state = {
-            cull_mode = .FRONT,
+            cull_mode = .BACK,
         },
         target_info = {
             num_color_targets = 1,
             color_target_descriptions = &(sdl.GPUColorTargetDescription {
-                format = sdl.GetGPUSwapchainTextureFormat(g.gpu, g.window),
+                format = g.swapchain_texture_format,
             }),
             has_depth_stencil_target = true,
             depth_stencil_format = g.depth_texture_format,
         },
-    }); sdl_assert(g.cubemap_pipeline != nil)
+    }); sdl_assert(g.skybox_pipeline != nil)
 
     // Release the shaders
     sdl.ReleaseGPUShader(g.gpu, vertex_shader)

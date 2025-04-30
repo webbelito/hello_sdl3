@@ -16,6 +16,8 @@ Vertex_Data :: struct {
 
 UBO_Vertex_Global :: struct #packed {
     view_projection_matrix: Mat4,
+    inverse_view_matrix: Mat4,
+    inverse_projection_matrix: Mat4,
 }
 
 UBO_Vertex_Local :: struct #packed {
@@ -157,6 +159,20 @@ asset_load_model_from_mesh :: proc(copy_pass: ^sdl.GPUCopyPass, mesh: Mesh, diff
         mesh = mesh,
         material = material,
     }
+}
+
+assets_load_cubemap_texture_single :: proc(copy_pass: ^sdl.GPUCopyPass, texture_file: string) -> ^sdl.GPUTexture {
+
+    // Load the Pixels
+    pixels, image_size := asset_load_pixels(texture_file)
+
+    // Upload the Pixels
+    texture := gpu_upload_cubemap_texture_single(copy_pass, pixels, image_size.x, image_size.y)
+
+    // Free the Pixels
+    assets_free_pixels(pixels)
+
+    return texture
 }
 
 assets_load_cubemap_texture_file :: proc(copy_pass: ^sdl.GPUCopyPass, texture_files: [sdl.GPUCubeMapFace]string) -> ^sdl.GPUTexture {

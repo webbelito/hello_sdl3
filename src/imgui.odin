@@ -72,6 +72,8 @@ imgui_update_inspector :: proc() {
         im.Checkbox("Rotate", &g.should_rotate)
         im.ColorEdit3("Ambient Light", &g.ambient_light_color, {.Float})
 
+        im.Checkbox("Use Multi Image", &g.skybox_use_multi_image)
+
         im.SeparatorText("Light")
         im.DragFloat3("Position", &g.light_position, 0.1, -10, 10)
         im.ColorEdit3("Color", &g.light_color, {.Float})

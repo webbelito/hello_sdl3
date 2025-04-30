@@ -1,3 +1,5 @@
+#include "common.hlsl"
+
 struct Import {
     float3 texture_coords: TEXCOORD0;
 };

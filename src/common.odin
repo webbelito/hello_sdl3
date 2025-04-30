@@ -7,7 +7,7 @@ import sdl "vendor:sdl3"
 
 // Common Structures
 
-Globals :: struct {
+skybox_mesh :: struct {
     gpu: ^sdl.GPUDevice,
     window: ^sdl.Window,
     window_size: Vec2i,
@@ -39,7 +39,7 @@ Quat :: quaternion128
 
 // Common Variables
 
-g: Globals
+g: skybox_mesh
 
 // Common Procedures
 
