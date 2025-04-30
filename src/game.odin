@@ -9,15 +9,15 @@ ROTATION_SPEED :: f32(90) * linalg.RAD_PER_DEG
 
 
 Game_State :: struct {
-    entity_pipeline: ^sdl.GPUGraphicsPipeline,
-    light_shape_pipeline: ^sdl.GPUGraphicsPipeline,
-    light_shape_mesh: Mesh,
-    
     default_sampler: ^sdl.GPUSampler,
-
-    projection_matrix: Mat4,
+    entity_pipeline: ^sdl.GPUGraphicsPipeline,
+    
+    cubemap_pipeline: ^sdl.GPUGraphicsPipeline,
+    cubemap_mesh: Mesh,
+    cubemap_texture: ^sdl.GPUTexture,
 
     camera: Camera,
+    projection_matrix: Mat4,
     look: Look,
 
     clear_color: sdl.FColor,
@@ -26,10 +26,11 @@ Game_State :: struct {
     models: []Model,
     entities: []Entity,
 
+    light_shape_pipeline: ^sdl.GPUGraphicsPipeline,
+    light_shape_mesh: Mesh,
     light_position: Vec3,
     light_color: Vec3,
     light_intensity: f32,
-
     ambient_light_color: Vec3,
 
     ui_input_mode: bool,
@@ -40,7 +41,8 @@ game_init :: proc() {
     // Setup the Pipelines
     game_setup_pipeline()
     game_setup_light_shape_pipeline()
-    
+    game_setup_cubemap_pipeline()
+
     // Configure Default Sampler
     g.default_sampler = sdl.CreateGPUSampler(g.gpu, {
         min_filter = .LINEAR,
@@ -65,6 +67,16 @@ game_init :: proc() {
         asset_load_model_from_mesh(copy_pass, shapes_generate_cube_mesh(copy_pass, 1, 1, 1), "wall_prototype_texture_01.png", specular_color = 1, specular_shininess = 100),
     })
     
+    // Load the Cubemap Texture
+    g.cubemap_mesh = shapes_generate_cube_mesh(copy_pass, 2, 2, 2)
+    g.cubemap_texture = assets_load_cubemap_texture_file(copy_pass, {
+        .POSITIVEX = "skyboxes/right.png",
+        .NEGATIVEX = "skyboxes/left.png",
+        .POSITIVEY = "skyboxes/top.png",
+        .NEGATIVEY = "skyboxes/bottom.png",
+        .POSITIVEZ = "skyboxes/front.png",
+        .NEGATIVEZ = "skyboxes/back.png",
+    })
     // End the Copy Pass
     sdl.EndGPUCopyPass(copy_pass)
 
@@ -178,6 +190,10 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
     // Begin a render pass
     render_pass := sdl.BeginGPURenderPass(command_buf, &color_target, 1, &depth_target_info); sdl_assert(render_pass != nil)
 
+    // *
+    // * Bind Pipelines
+    // *
+
     // Light Shape Pipeline
     {
 
@@ -257,11 +273,39 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
 
     }
 
+    // Cubemap Pipeline
+    {
+
+        // Bind the Graphics Pipeline
+        sdl.BindGPUGraphicsPipeline(render_pass, g.cubemap_pipeline)
+ 
+        // Create a Model Matrix
+        model_matrix := linalg.matrix4_translate_f32({-3, 1, 3})
+
+        // Push the Model Matrix Vertex Uniform Data
+        sdl.PushGPUVertexUniformData(command_buf, 1, &model_matrix, size_of(model_matrix))
+
+        // Bind the Fragment Sampler
+        sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = g.cubemap_texture, sampler = g.default_sampler }), 1)
+
+        // Bind the Cubemap Vertex Buffer
+        sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = g.cubemap_mesh.vertex_buf }), 1)
+
+        // Bind the Cubemap Index Buffer
+        sdl.BindGPUIndexBuffer(render_pass, { buffer = g.cubemap_mesh.index_buf }, ._16BIT)
+
+        // Draw the Cubemap
+        sdl.DrawGPUIndexedPrimitives(render_pass, g.cubemap_mesh.num_indicies, 1, 0, 0, 0)
+
+        
+    }
+
     // End the main render pass
     sdl.EndGPURenderPass(render_pass)
 
 }
 
+// TODO: Unify and abstract the pipeline setup
 game_setup_pipeline :: proc() {
 
     // Load Shaders
@@ -388,3 +432,57 @@ game_setup_light_shape_pipeline :: proc() {
     sdl.ReleaseGPUShader(g.gpu, fragment_shader)
 }
 
+game_setup_cubemap_pipeline :: proc() {
+
+    // Load Shaders
+    vertex_shader := shader_load(g.gpu, "cubemap.vert")
+    fragment_shader := shader_load(g.gpu, "cubemap.frag")
+
+    // Create Vertex Attributes
+    vertex_attributes := []sdl.GPUVertexAttribute {
+        {
+            location = 0,
+            format = .FLOAT3,
+            offset = u32(offset_of(Vertex_Data, position)),
+        },
+    }
+    
+    // Create a Graphics Pipeline
+    g.cubemap_pipeline = sdl.CreateGPUGraphicsPipeline(g.gpu, {
+        vertex_shader = vertex_shader,
+        fragment_shader = fragment_shader,
+        primitive_type = .TRIANGLELIST,
+        vertex_input_state = {
+            num_vertex_buffers = 1,
+            num_vertex_attributes = u32(len(vertex_attributes)),
+            vertex_buffer_descriptions = &(sdl.GPUVertexBufferDescription {
+                slot = 0,
+                pitch = size_of(Vertex_Data),
+            }),
+            vertex_attributes = raw_data(vertex_attributes),
+        },
+        depth_stencil_state = {
+            enable_depth_test = true,
+            enable_depth_write = true,
+            compare_op = .LESS,
+        },
+        rasterizer_state = {
+            cull_mode = .FRONT,
+        },
+        target_info = {
+            num_color_targets = 1,
+            color_target_descriptions = &(sdl.GPUColorTargetDescription {
+                format = sdl.GetGPUSwapchainTextureFormat(g.gpu, g.window),
+            }),
+            has_depth_stencil_target = true,
+            depth_stencil_format = g.depth_texture_format,
+        },
+    }); sdl_assert(g.cubemap_pipeline != nil)
+
+    // Release the shaders
+    sdl.ReleaseGPUShader(g.gpu, vertex_shader)
+    sdl.ReleaseGPUShader(g.gpu, fragment_shader)
+    
+    
+
+}

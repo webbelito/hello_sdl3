@@ -56,28 +56,34 @@ Material :: struct {
     specular_shininess: f32,
 }
 
+asset_load_pixels :: proc(texture_file: string) -> (pixels: []byte, size: [2]u32) {
+
+    texture_path := filepath.join({ASSETS_DIR, "textures", texture_file}, context.temp_allocator)
+    texture_file := strings.clone_to_cstring(texture_path, context.temp_allocator)
+
+    image_size: Vec2i
+
+    pixels_data := stbi.load(texture_file, &image_size.x, &image_size.y, nil, 4); assert(pixels_data != nil)
+    pixels_byte_size := image_size.x * image_size.y * 4
+
+    pixels = slice.bytes_from_ptr(pixels_data, int(pixels_byte_size))
+    size = {u32(image_size.x), u32(image_size.y)}
+    
+    return
+
+}
+
+assets_free_pixels :: proc(pixels: []byte) {
+    stbi.image_free(raw_data(pixels))
+}
 
 asset_load_texture_file :: proc(copy_pass: ^sdl.GPUCopyPass, texture_file: string) -> ^sdl.GPUTexture {
 
-    // Get the Texture Path
-    texture_path := filepath.join({ASSETS_DIR, "textures", texture_file}, context.temp_allocator)
-
-    // Clone the Texture Path
-    texture_file := strings.clone_to_cstring(texture_path, context.temp_allocator)
-    
-    // Load the image
-    image_size: Vec2i
-    
-    pixels := stbi.load(texture_file, &image_size.x, &image_size.y, nil, 4); sdl_assert(pixels != nil)
-    pixles_byte_size := image_size.x * image_size.y * 4
-
-    // Upload the Texture Data to the Texture Buffer
-    texture := gpu_upload_texture(copy_pass, slice.bytes_from_ptr(pixels, int(pixles_byte_size)), u32(image_size.x), u32(image_size.y))
-
-    // Release the Image Pixels
-    stbi.image_free(pixels)
-
+    pixels, image_size := asset_load_pixels(texture_file)
+    texture := gpu_upload_texture(copy_pass, pixels, image_size.x, image_size.y)
+    assets_free_pixels(pixels)
     return texture
+
 }
 
 asset_load_obj_file :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string) -> Mesh {
@@ -151,4 +157,35 @@ asset_load_model_from_mesh :: proc(copy_pass: ^sdl.GPUCopyPass, mesh: Mesh, diff
         mesh = mesh,
         material = material,
     }
+}
+
+assets_load_cubemap_texture_file :: proc(copy_pass: ^sdl.GPUCopyPass, texture_files: [sdl.GPUCubeMapFace]string) -> ^sdl.GPUTexture {
+
+    // Create a Pixels Array
+    pixels: [sdl.GPUCubeMapFace][]byte
+    size: u32
+
+    // Load the Pixels
+    for texture_file, side in texture_files {
+        side_pixels, image_size := asset_load_pixels(texture_file)
+        pixels[side] = side_pixels
+        
+        assert(image_size.x == image_size.y)
+
+        if size == 0 {
+            size = image_size.x
+        } else {
+            assert(size == image_size.x)
+        }
+    }
+
+    // Upload the Pixels
+    texture := gpu_upload_cubemap_texture_split(copy_pass, pixels, size)
+    
+    // Free the Pixels
+    for side_pixels in pixels {
+        assets_free_pixels(side_pixels)
+    }
+
+    return texture
 }

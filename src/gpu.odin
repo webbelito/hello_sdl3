@@ -10,6 +10,7 @@ gpu_upload_texture :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: []u8, width: u32
     // Create a Texture
     texture := sdl.CreateGPUTexture(g.gpu, {
         format = .R8G8B8A8_UNORM_SRGB,
+        type = .D2,
         usage = {.SAMPLER}, 
         width = width,
         height = height,
@@ -38,6 +39,60 @@ gpu_upload_texture :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: []u8, width: u32
         { texture = texture, w = width, h = height, d = 1 },
         false,
     )
+
+    // Release the Texture Transfer Buffer
+    sdl.ReleaseGPUTransferBuffer(g.gpu, texture_transfer_buf)
+
+    return texture
+}
+
+gpu_upload_cubemap_texture_split :: proc(copy_pass: ^sdl.GPUCopyPass, pixels: [sdl.GPUCubeMapFace][]byte, size: u32) -> ^sdl.GPUTexture {
+
+    // Create a Texture
+    texture := sdl.CreateGPUTexture(g.gpu, {
+        format = .R8G8B8A8_UNORM_SRGB,
+        type = .CUBE,
+        usage = {.SAMPLER}, 
+        width = size,
+        height = size,
+        layer_count_or_depth = 6,
+        num_levels = 1,
+    }); sdl_assert(texture != nil)
+
+    // Check that all sides have the correct size
+    size_byte_size := int(size * size * 4) // 4 bytes per pixel
+    for side_pixels in pixels do assert(len(side_pixels) == size_byte_size)
+    
+    // Create a Texture Transfer Buffer
+    texture_transfer_buf := sdl.CreateGPUTransferBuffer(g.gpu, {
+        usage = .UPLOAD,
+        size = u32(size_byte_size * 6),
+    }); sdl_assert(texture_transfer_buf != nil)
+
+
+    // Map the Texture Transfer Buffer
+    texture_transfer_mem := transmute([^]byte)sdl.MapGPUTransferBuffer(g.gpu, texture_transfer_buf, false); sdl_assert(texture_transfer_mem != nil)
+
+    // Copy the Texture Data to the Texture Transfer Buffer
+    offset := 0
+    for side_pixels in pixels {
+        mem.copy(texture_transfer_mem[offset:], raw_data(side_pixels), len(side_pixels))
+        offset += size_byte_size
+    }
+
+    // Unmap the Texture Transfer Buffer
+    sdl.UnmapGPUTransferBuffer(g.gpu, texture_transfer_buf)
+    
+    // Upload the Texture Data to the Texture Buffer
+    offset = 0
+    for side_pixels, side in pixels {
+        sdl.UploadToGPUTexture(copy_pass, 
+            { transfer_buffer = texture_transfer_buf, offset = u32(offset) },
+            { texture = texture, layer = u32(side), w = size, h = size, d = 1 },
+            false,
+        )
+        offset += size_byte_size
+    }
 
     // Release the Texture Transfer Buffer
     sdl.ReleaseGPUTransferBuffer(g.gpu, texture_transfer_buf)
