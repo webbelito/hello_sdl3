@@ -1,6 +1,7 @@
 package main
 
 import "core:log"
+import "base:runtime"
 
 import sdl "vendor:sdl3"
 
@@ -43,5 +44,5 @@ g: Globals
 // Common Procedures
 
 sdl_assert :: proc(ok: bool) {
-    if !ok do log.panicf("SDL Error: {}", sdl.GetError())
+    if !ok do sdl_log(&sdl_log_context, .ASSERT, .ERROR, sdl.GetError())
 }

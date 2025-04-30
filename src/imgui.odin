@@ -70,7 +70,6 @@ imgui_update_inspector :: proc() {
 
     if im.Begin("Inspector") {
         im.Checkbox("Rotate", &g.should_rotate)
-        im.ColorEdit3("Clear Color", transmute(^[3]f32)&g.clear_color, {.Float})
         im.ColorEdit3("Ambient Light", &g.ambient_light_color, {.Float})
 
         im.SeparatorText("Light")

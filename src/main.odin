@@ -70,8 +70,8 @@ init :: proc() {
     }); sdl_assert(g.depth_texture != nil)
 
 
-    // Set Window Relative Mouse Mode 
-    ok = sdl.SetWindowRelativeMouseMode(g.window, true); sdl_assert(ok)
+    // Set the UI Input Mode to False
+    set_ui_input_mode(false)
 
 }
 
@@ -140,14 +140,12 @@ main :: proc() {
         // Set the last tick
         last_tick = new_tick
 
-        ui_input_mode := !sdl.GetWindowRelativeMouseMode(g.window)
-
         // Process SDL events
         event: sdl.Event
         for sdl.PollEvent(&event) {
             
             // ImGui Events
-            if ui_input_mode do imgui_process_event(&event)
+            if g.ui_input_mode do imgui_process_event(&event)
             
             #partial switch event.type {
                 case .QUIT:
@@ -158,20 +156,19 @@ main :: proc() {
                     if event.key.scancode == .ESCAPE && !im_io.WantCaptureKeyboard do break main_loop
 
                     // Set the Key Down
-                    if !ui_input_mode {
+                    if !g.ui_input_mode {
                         g.key_down[event.key.scancode] = true
                     }
                     
                     // Tab will Toggle UI Input Mode
                     if event.key.scancode == .F1 {
-                        ok := sdl.SetWindowRelativeMouseMode(g.window, ui_input_mode); sdl_assert(ok)
-                        ui_input_mode = !ui_input_mode
+                        set_ui_input_mode(!g.ui_input_mode)
                     }
 
                 case .KEY_UP:
                     g.key_down[event.key.scancode] = false
                 case .MOUSE_MOTION:
-                    if !ui_input_mode {
+                    if !g.ui_input_mode {
                         g.mouse_movement = {f32(event.motion.xrel), f32(event.motion.yrel)}
                     }
             }
@@ -212,4 +209,13 @@ main :: proc() {
         ok = sdl.SubmitGPUCommandBuffer(command_buf); sdl_assert(ok)
     }
 
+}
+
+set_ui_input_mode :: proc(ui_input_mode: bool) {
+ 
+    // Only set the UI Input Mode if it has changed
+    if ui_input_mode != g.ui_input_mode {
+        g.ui_input_mode = ui_input_mode
+        ok := sdl.SetWindowRelativeMouseMode(g.window, !ui_input_mode); sdl_assert(ok)
+    }
 }

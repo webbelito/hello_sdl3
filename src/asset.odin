@@ -116,7 +116,7 @@ asset_load_obj_file :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string) -> M
     return mesh
 }
 
-asset_load_model :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string, diffuse_texture_file: string, specular_color: Vec3, specular_shininess: f32) -> Model {
+asset_load_model_from_obj_file :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string, diffuse_texture_file: string, specular_color: Vec3, specular_shininess: f32) -> Model {
 
     // Load the texture
     diffuse_texture := asset_load_texture_file(copy_pass, diffuse_texture_file)
@@ -129,6 +129,23 @@ asset_load_model :: proc(copy_pass: ^sdl.GPUCopyPass, mesh_file: string, diffuse
 
     // Load the mesh
     mesh := asset_load_obj_file(copy_pass, mesh_file)
+
+    return {
+        mesh = mesh,
+        material = material,
+    }
+}
+
+asset_load_model_from_mesh :: proc(copy_pass: ^sdl.GPUCopyPass, mesh: Mesh, diffuse_texture_file: string, specular_color: Vec3, specular_shininess: f32) -> Model {
+
+    // Load the texture
+    diffuse_texture := asset_load_texture_file(copy_pass, diffuse_texture_file)
+    
+    material := Material {
+        diffuse_texture = diffuse_texture,
+        specular_color = specular_color,
+        specular_shininess = specular_shininess,
+    }
 
     return {
         mesh = mesh,

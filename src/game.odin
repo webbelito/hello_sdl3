@@ -9,8 +9,11 @@ ROTATION_SPEED :: f32(90) * linalg.RAD_PER_DEG
 
 
 Game_State :: struct {
-    pipeline: ^sdl.GPUGraphicsPipeline,
-    sampler: ^sdl.GPUSampler,
+    entity_pipeline: ^sdl.GPUGraphicsPipeline,
+    light_shape_pipeline: ^sdl.GPUGraphicsPipeline,
+    light_shape_mesh: Mesh,
+    
+    default_sampler: ^sdl.GPUSampler,
 
     projection_matrix: Mat4,
 
@@ -28,11 +31,21 @@ Game_State :: struct {
     light_intensity: f32,
 
     ambient_light_color: Vec3,
+
+    ui_input_mode: bool,
 }
 
 game_init :: proc() {
 
+    // Setup the Pipelines
     game_setup_pipeline()
+    game_setup_light_shape_pipeline()
+    
+    // Configure Default Sampler
+    g.default_sampler = sdl.CreateGPUSampler(g.gpu, {
+        min_filter = .LINEAR,
+        mag_filter = .LINEAR,
+    })
 
     // Create a Copy Command Buffer
     copy_command_buf := sdl.AcquireGPUCommandBuffer(g.gpu); sdl_assert(copy_command_buf != nil)
@@ -40,11 +53,16 @@ game_init :: proc() {
     // Begin a Copy Pass
     copy_pass := sdl.BeginGPUCopyPass(copy_command_buf); sdl_assert(copy_pass != nil)
     
+    // Create Light Shape Mesh
+    g.light_shape_mesh = shapes_generate_cube_mesh(copy_pass, 0.2, 0.2, 0.2)
+
     // Load the Models
     g.models = slice.clone([]Model {
-        asset_load_model(copy_pass, "tractor-police.obj", "colormap.png", 0, 1),
-        asset_load_model(copy_pass, "sedan-sports.obj", "colormap.png", 1, 160),
-        asset_load_model(copy_pass, "ambulance.obj", "colormap.png", {1,0,0}, 80),
+        asset_load_model_from_obj_file(copy_pass, "tractor-police.obj", "colormap.png", 0, 1),
+        asset_load_model_from_obj_file(copy_pass, "sedan-sports.obj", "colormap.png", 1, 160),
+        asset_load_model_from_obj_file(copy_pass, "ambulance.obj", "colormap.png", {1,0,0}, 80),
+        asset_load_model_from_mesh(copy_pass, shapes_generate_plane_mesh(copy_pass, 10, 10), "cobblestone_1.png", specular_color = 0, specular_shininess = 1),
+        asset_load_model_from_mesh(copy_pass, shapes_generate_cube_mesh(copy_pass, 1, 1, 1), "wall_prototype_texture_01.png", specular_color = 1, specular_shininess = 100),
     })
     
     // End the Copy Pass
@@ -73,13 +91,20 @@ game_init :: proc() {
             position = {5, 0, 0},
             rotation = linalg.quaternion_from_euler_angle_y_f32(15 * linalg.DEG_PER_RAD),
         },
+        {
+            id = 3,
+            model_id = 3,
+        },
+        {
+            id = 4,
+            model_id = 4,
+            position = {3, 0.5, 3},
+        },
+        
     })
 
     // Initialize the Should Rotate Flag
     g.should_rotate = true
-
-    // Initialize the Clear Color
-    g.clear_color = 0
 
     // Initialize the Light
     g.light_position = {3, 3, 3}
@@ -153,54 +178,82 @@ game_render :: proc(command_buf: ^sdl.GPUCommandBuffer, swapchain_texture: ^sdl.
     // Begin a render pass
     render_pass := sdl.BeginGPURenderPass(command_buf, &color_target, 1, &depth_target_info); sdl_assert(render_pass != nil)
 
-    // Bind the Graphics Pipeline
-    sdl.BindGPUGraphicsPipeline(render_pass, g.pipeline)
+    // Light Shape Pipeline
+    {
 
-    for entity in g.entities {
-    
-        // Create a Model Matrix
-        model_matrix := linalg.matrix4_from_trs_f32(entity.position, entity.rotation, 1)
-
-        // Create a Normal Matrix
-        normal_matrix := linalg.inverse_transpose(model_matrix)
-
-        // Create a UBO
-        ubo_vertex_local := UBO_Vertex_Local {
-            model_matrix = model_matrix,
-            normal_matrix = normal_matrix,
-        }
-
-        // Push the Vertex Uniform Data
-        sdl.PushGPUVertexUniformData(command_buf, 1, &ubo_vertex_local, size_of(ubo_vertex_local))
-        
         // Bind the Graphics Pipeline
-        sdl.BindGPUGraphicsPipeline(render_pass, g.pipeline)
+        sdl.BindGPUGraphicsPipeline(render_pass, g.light_shape_pipeline)
 
-        model := g.models[entity.model_id]
+        // Create a Model Matrix
+        model_matrix := linalg.matrix4_translate_f32(g.light_position)
+    
+        // Push the Model Matrix Vertex Uniform Data
+        sdl.PushGPUVertexUniformData(command_buf, 1, &model_matrix, size_of(model_matrix))
+    
+        // Bind the Light Shape Vertex Buffer
+        sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = g.light_shape_mesh.vertex_buf }), 1)
 
-        // Create the material
-        material := model.material
-
-        // Create UBO for the Fragment Shader
-        ubo_frag_local := UBO_Frag_Local {
-            material_specular_color = material.specular_color,
-            material_shininess = material.specular_shininess,
-        }
-
-        // Push the Fragment Uniform Data
-        sdl.PushGPUFragmentUniformData(command_buf, 1, &ubo_frag_local, size_of(ubo_frag_local))
+        // Bind the Light Shape Index Buffer
+        sdl.BindGPUIndexBuffer(render_pass, { buffer = g.light_shape_mesh.index_buf }, ._16BIT)
         
-        // Bind the Vertex Buffer
-        sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = model.vertex_buf }), 1)
+        // Draw the Light Shape
+        sdl.DrawGPUIndexedPrimitives(render_pass, g.light_shape_mesh.num_indicies, 1, 0, 0, 0)
+        
+    }
 
-        // Bind the Index Buffer
-        sdl.BindGPUIndexBuffer(render_pass, { buffer = model.index_buf }, ._16BIT)
+    // Entity Pipeline
+    {
 
-        // Bind the Fragment Sampler
-        sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = material.diffuse_texture, sampler = g.sampler }), 1)
+        // Bind the Graphics Pipeline
+        sdl.BindGPUGraphicsPipeline(render_pass, g.entity_pipeline)
 
-        // Draw the Indexed Primitives
-        sdl.DrawGPUIndexedPrimitives(render_pass, model.num_indicies, 1, 0, 0, 0)
+        for entity in g.entities {
+        
+            // Create a Model Matrix
+            model_matrix := linalg.matrix4_from_trs_f32(entity.position, entity.rotation, 1)
+
+            // Create a Normal Matrix
+            normal_matrix := linalg.inverse_transpose(model_matrix)
+
+            // Create a UBO
+            ubo_vertex_local := UBO_Vertex_Local {
+                model_matrix = model_matrix,
+                normal_matrix = normal_matrix,
+            }
+
+            // Push the Vertex Uniform Data
+            sdl.PushGPUVertexUniformData(command_buf, 1, &ubo_vertex_local, size_of(ubo_vertex_local))
+            
+            // Bind the Graphics Pipeline
+            sdl.BindGPUGraphicsPipeline(render_pass, g.entity_pipeline)
+
+            model := g.models[entity.model_id]
+
+            // Create the material
+            material := model.material
+
+            // Create UBO for the Fragment Shader
+            ubo_frag_local := UBO_Frag_Local {
+                material_specular_color = material.specular_color,
+                material_shininess = material.specular_shininess,
+            }
+
+            // Push the Fragment Uniform Data
+            sdl.PushGPUFragmentUniformData(command_buf, 1, &ubo_frag_local, size_of(ubo_frag_local))
+            
+            // Bind the Vertex Buffer
+            sdl.BindGPUVertexBuffers(render_pass, 0, &(sdl.GPUBufferBinding { buffer = model.vertex_buf }), 1)
+
+            // Bind the Index Buffer
+            sdl.BindGPUIndexBuffer(render_pass, { buffer = model.index_buf }, ._16BIT)
+
+            // Bind the Fragment Sampler
+            sdl.BindGPUFragmentSamplers(render_pass, 0, &(sdl.GPUTextureSamplerBinding { texture = material.diffuse_texture, sampler = g.default_sampler }), 1)
+
+            // Draw the Indexed Primitives
+            sdl.DrawGPUIndexedPrimitives(render_pass, model.num_indicies, 1, 0, 0, 0)
+
+        }
 
     }
 
@@ -240,7 +293,7 @@ game_setup_pipeline :: proc() {
     }
     
     // Create a Graphics Pipeline
-    g.pipeline = sdl.CreateGPUGraphicsPipeline(g.gpu, {
+    g.entity_pipeline = sdl.CreateGPUGraphicsPipeline(g.gpu, {
         vertex_shader = vertex_shader,
         fragment_shader = fragment_shader,
         primitive_type = .TRIANGLELIST,
@@ -269,15 +322,69 @@ game_setup_pipeline :: proc() {
             has_depth_stencil_target = true,
             depth_stencil_format = g.depth_texture_format,
         },
-    }); sdl_assert(g.pipeline != nil)
+    }); sdl_assert(g.entity_pipeline != nil)
 
     // Release the shaders
     sdl.ReleaseGPUShader(g.gpu, vertex_shader)
     sdl.ReleaseGPUShader(g.gpu, fragment_shader)
     
     // Create a Sampler
-    g.sampler = sdl.CreateGPUSampler(g.gpu, {})
+    g.default_sampler = sdl.CreateGPUSampler(g.gpu, {})
 
     // Initialize ImGui
     imgui_init()
 }
+
+game_setup_light_shape_pipeline :: proc() {
+
+    // Load Shaders
+    vertex_shader := shader_load(g.gpu, "lightshape.vert")
+    fragment_shader := shader_load(g.gpu, "lightshape.frag")
+
+    // Create Vertex Attributes
+    vertex_attributes := []sdl.GPUVertexAttribute {
+        {
+            location = 0,
+            format = .FLOAT3,
+            offset = u32(offset_of(Vertex_Data, position)),
+        },
+    }
+    
+    // Create a Graphics Pipeline
+    g.light_shape_pipeline = sdl.CreateGPUGraphicsPipeline(g.gpu, {
+        vertex_shader = vertex_shader,
+        fragment_shader = fragment_shader,
+        primitive_type = .TRIANGLELIST,
+        vertex_input_state = {
+            num_vertex_buffers = 1,
+            num_vertex_attributes = u32(len(vertex_attributes)),
+            vertex_buffer_descriptions = &(sdl.GPUVertexBufferDescription {
+                slot = 0,
+                pitch = size_of(Vertex_Data),
+            }),
+          vertex_attributes = raw_data(vertex_attributes),
+        },
+        depth_stencil_state = {
+            enable_depth_test = true,
+            enable_depth_write = true,
+            compare_op = .LESS,
+        },
+        rasterizer_state = {
+            cull_mode = .BACK,
+            // fill_mode = .LINE,
+        },
+        target_info = {
+            num_color_targets = 1,
+            color_target_descriptions = &(sdl.GPUColorTargetDescription {
+                format = sdl.GetGPUSwapchainTextureFormat(g.gpu, g.window),
+            }),
+            has_depth_stencil_target = true,
+            depth_stencil_format = g.depth_texture_format,
+        },
+    }); sdl_assert(g.light_shape_pipeline != nil)
+
+    // Release the shaders
+    sdl.ReleaseGPUShader(g.gpu, vertex_shader)
+    sdl.ReleaseGPUShader(g.gpu, fragment_shader)
+}
+
